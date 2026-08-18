@@ -1,0 +1,323 @@
+<div class="scene-captured-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Scene Captured</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <p>
+                <small>
+                    เลือกข้อความในแชท แล้วให้ AI เขียน image prompt จากซีนนั้นให้ ก่อนส่งต่อไปเจนภาพ
+                    (เน้น NovelAI) — เปิดใช้ผ่านปุ่มที่ข้อความ หรือลากเลือกข้อความในแชท
+                </small>
+            </p>
+
+            <!-- ===== กลุ่ม 1: การเจน prompt ===== -->
+            <div class="scap-settings-group">
+                <div class="scap-settings-title"><i class="fa-solid fa-wand-magic-sparkles"></i> การเจน prompt</div>
+
+                <label for="scap-api-profile">Connection Profile (สำหรับเขียน prompt)</label>
+                <select id="scap-api-profile" class="text_pole"></select>
+                <small class="scap-field-hint">ไม่เลือก = ใช้ API หลักของ SillyTavern ที่ตั้งไว้อยู่แล้ว (ปกติไม่ต้องแตะ)</small>
+
+                <label class="checkbox_label" for="scap-include-character-card">
+                    <input id="scap-include-character-card" type="checkbox" />
+                    <span>ดึงคำอธิบายตัวละครจาก Character Card มาช่วยเขียน prompt</span>
+                </label>
+                <small class="scap-field-hint">ให้ AI รู้จักหน้าตา/ลักษณะตัวละครแม่นขึ้น แม้ข้อความที่เลือกจะไม่ได้พูดถึงเลยก็ตาม</small>
+
+                <label class="checkbox_label" for="scap-include-persona">
+                    <input id="scap-include-persona" type="checkbox" />
+                    <span>ดึงคำอธิบาย Persona ของผู้ใช้มาด้วย</span>
+                </label>
+                <small class="scap-field-hint">มีประโยชน์ถ้าตัวคุณเองก็ปรากฏอยู่ในภาพด้วย</small>
+
+                <label class="checkbox_label" for="scap-include-world-info">
+                    <input id="scap-include-world-info" type="checkbox" />
+                    <span>ดึงข้อมูลจาก World Info / Lorebook มาด้วย</span>
+                </label>
+                <small class="scap-field-hint">เผื่อมีรายละเอียดสถานที่/เครื่องแต่งกาย/สิ่งของเฉพาะที่ตั้งไว้ใน lorebook</small>
+
+                <div class="scap-advanced-toggle" data-target="scap-adv-prompt">
+                    <i class="fa-solid fa-chevron-right"></i> ตั้งค่าขั้นสูง
+                </div>
+                <div id="scap-adv-prompt" class="scap-advanced scap-hidden">
+                    <label for="scap-response-length">ความยาวคำตอบสูงสุด (token)</label>
+                    <input id="scap-response-length" type="number" class="text_pole" min="50" max="4000" step="50" />
+
+                    <label for="scap-world-info-limit">ความยาวสูงสุดของ World Info ที่ดึงมา (ตัวอักษร, 0 = ไม่จำกัด)</label>
+                    <input id="scap-world-info-limit" type="number" class="text_pole" min="0" step="100" />
+
+                    <label for="scap-system-prompt">คำสั่งระบบสำหรับเขียน prompt</label>
+                    <textarea id="scap-system-prompt" class="text_pole" rows="8"></textarea>
+                    <div class="flex-container marginTop5">
+                        <div id="scap-reset-system-prompt" class="menu_button menu_button_icon interactable" tabindex="0">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            <span>คืนค่าเริ่มต้น</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== กลุ่ม 2: Image API (พารามิเตอร์ NovelAI) ===== -->
+            <div class="scap-settings-group">
+                <div class="scap-settings-title"><i class="fa-solid fa-image"></i> Image API</div>
+
+                <label for="scap-prefix">Prefix (แทรกหน้าสุดของทุก prompt)</label>
+                <textarea id="scap-prefix" class="text_pole" rows="2"></textarea>
+
+                <label for="scap-negative">Negative Prompt</label>
+                <textarea id="scap-negative" class="text_pole" rows="2"></textarea>
+
+                <label for="scap-resolution">สัดส่วนภาพ</label>
+                <select id="scap-resolution" class="text_pole">
+                    <option value="832x1216">832×1216 (แนวตั้ง)</option>
+                    <option value="1216x832">1216×832 (แนวนอน)</option>
+                    <option value="1024x1024">1024×1024 (จัตุรัส)</option>
+                    <option value="1152x896">1152×896 (แนวนอน)</option>
+                    <option value="896x1152">896×1152 (แนวตั้ง)</option>
+                    <option value="custom">กำหนดเอง…</option>
+                </select>
+
+                <div class="scap-advanced-toggle" data-target="scap-adv-image-api">
+                    <i class="fa-solid fa-chevron-right"></i> ตั้งค่าขั้นสูง (ขนาดเอง / โมเดล / sampler ฯลฯ)
+                </div>
+                <div id="scap-adv-image-api" class="scap-advanced scap-hidden">
+                    <div class="flex-container">
+                        <div class="flex1">
+                            <label for="scap-width">กว้าง</label>
+                            <input id="scap-width" type="number" class="text_pole" min="64" max="1920" step="64" />
+                        </div>
+                        <div class="flex1">
+                            <label for="scap-height">สูง</label>
+                            <input id="scap-height" type="number" class="text_pole" min="64" max="1920" step="64" />
+                        </div>
+                    </div>
+
+                    <label for="scap-model">โมเดล NovelAI</label>
+                    <select id="scap-model" class="text_pole">
+                        <option value="nai-diffusion-4-5-full">NAI Diffusion Anime V4.5 (Full)</option>
+                        <option value="nai-diffusion-4-5-curated">NAI Diffusion Anime V4.5 (Curated)</option>
+                        <option value="nai-diffusion-4-full">NAI Diffusion Anime V4 (Full)</option>
+                        <option value="nai-diffusion-4-curated-preview">NAI Diffusion Anime V4 (Curated)</option>
+                        <option value="nai-diffusion-3">NAI Diffusion Anime V3</option>
+                        <option value="nai-diffusion-2">NAI Diffusion Anime V2</option>
+                        <option value="nai-diffusion-furry-3">NAI Diffusion Furry V3</option>
+                    </select>
+
+                    <div class="flex-container">
+                        <div class="flex1">
+                            <label for="scap-sampler">Sampler</label>
+                            <select id="scap-sampler" class="text_pole">
+                                <option value="k_euler_ancestral">k_euler_ancestral</option>
+                                <option value="k_euler">k_euler</option>
+                                <option value="k_dpmpp_2m">k_dpmpp_2m</option>
+                                <option value="k_dpmpp_sde">k_dpmpp_sde</option>
+                                <option value="k_dpmpp_2s_ancestral">k_dpmpp_2s_ancestral</option>
+                                <option value="k_dpm_fast">k_dpm_fast</option>
+                                <option value="ddim">ddim</option>
+                            </select>
+                        </div>
+                        <div class="flex1">
+                            <label for="scap-scheduler">Noise Schedule</label>
+                            <select id="scap-scheduler" class="text_pole">
+                                <option value="karras">karras</option>
+                                <option value="native">native</option>
+                                <option value="exponential">exponential</option>
+                                <option value="polyexponential">polyexponential</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex-container">
+                        <div class="flex1">
+                            <label for="scap-steps">Steps</label>
+                            <input id="scap-steps" type="number" class="text_pole" min="1" max="50" step="1" />
+                        </div>
+                        <div class="flex1">
+                            <label for="scap-scale">CFG Scale</label>
+                            <input id="scap-scale" type="number" class="text_pole" min="1" max="30" step="0.5" />
+                        </div>
+                        <div class="flex1">
+                            <label for="scap-seed">Seed (-1 = สุ่ม)</label>
+                            <input id="scap-seed" type="number" class="text_pole" min="-1" step="1" />
+                        </div>
+                    </div>
+
+                    <label class="checkbox_label" for="scap-smea">
+                        <input id="scap-smea" type="checkbox" />
+                        <span>SMEA</span>
+                    </label>
+                    <label class="checkbox_label" for="scap-smea-dyn">
+                        <input id="scap-smea-dyn" type="checkbox" />
+                        <span>SMEA DYN</span>
+                    </label>
+                    <label class="checkbox_label" for="scap-decrisper">
+                        <input id="scap-decrisper" type="checkbox" />
+                        <span>Decrisper</span>
+                    </label>
+                    <label class="checkbox_label" for="scap-variety-boost">
+                        <input id="scap-variety-boost" type="checkbox" />
+                        <span>Variety+</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- ===== กลุ่ม 3: การแทรกรูป ===== -->
+            <div class="scap-settings-group">
+                <div class="scap-settings-title"><i class="fa-solid fa-paintbrush"></i> การแทรกรูป</div>
+
+                <label for="scap-backend">ใช้ image gen ตัวไหน</label>
+                <select id="scap-backend" class="text_pole">
+                    <option value="nai-st">NovelAI ผ่าน SillyTavern (แนะนำ — ใช้งานง่ายสุด)</option>
+                    <option value="st-imagine">ใช้ตัวเจนภาพที่ตั้งไว้ใน SillyTavern อยู่แล้ว</option>
+                    <option value="nai-direct">NovelAI ตรง — แยกตัวละครได้ (ขั้นสูง)</option>
+                    <option value="custom">Custom API (ขั้นสูง — สำหรับผู้ใช้ที่เข้าใจ API)</option>
+                </select>
+                <small class="scap-field-hint" id="scap-backend-hint"></small>
+
+                <label class="checkbox_label" for="scap-auto-send">
+                    <input id="scap-auto-send" type="checkbox" />
+                    <span>เจนภาพทันทีหลังจับซีน (ข้ามหน้าแก้ prompt)</span>
+                </label>
+                <small class="scap-field-hint">ไม่เปิด = จะเปิดหน้าต่างให้ดู/แก้ prompt ก่อนเสมอ (แนะนำสำหรับมือใหม่ จะได้ตรวจก่อนเจนจริง)</small>
+
+                <!-- ===== ฟิลด์เฉพาะ NovelAI (ตรง) ===== -->
+                <div id="scap-nai-direct-fields" class="scap-backend-fields scap-hidden">
+                    <small class="scap-token-warning">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        Token นี้เก็บเป็น plaintext ใน settings.json ของ SillyTavern — ระวังอย่าแชร์ไฟล์นี้ให้ผู้อื่น
+                    </small>
+                    <label for="scap-nai-token">NovelAI Token</label>
+                    <input id="scap-nai-token" type="password" class="text_pole" placeholder="pst-xxxxxxxx..." autocomplete="off" />
+
+                    <label class="checkbox_label" for="scap-nai-cors-proxy">
+                        <input id="scap-nai-cors-proxy" type="checkbox" />
+                        <span>ยิงผ่าน CORS proxy ของ SillyTavern (ต้องเปิดไว้ถึงจะใช้โหมดนี้ได้)</span>
+                    </label>
+                    <small class="scap-field-hint">ถ้ายังไม่ได้เปิด ให้เปิด <code>enableCorsProxy: true</code> ใน config.yaml ของ SillyTavern แล้วรีสตาร์ทเซิร์ฟเวอร์ก่อน</small>
+
+                    <label class="checkbox_label" for="scap-nai-use-coords">
+                        <input id="scap-nai-use-coords" type="checkbox" />
+                        <span>กำหนดตำแหน่งตัวละครในภาพเอง (ซ้าย/ขวา ฯลฯ)</span>
+                    </label>
+                    <small class="scap-field-hint">เปิดแล้วจะมีตารางให้เลือกตำแหน่งแต่ละตัวละครตอนแก้ prompt — ไม่เปิดก็ใช้ได้ปกติ แค่ไม่กำหนดตำแหน่งตายตัว</small>
+
+                    <div class="flex-container marginTop5">
+                        <div id="scap-nai-test-connection" class="menu_button menu_button_icon interactable" tabindex="0">
+                            <i class="fa-solid fa-plug"></i>
+                            <span>ทดสอบการเชื่อมต่อ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== ฟิลด์เฉพาะ Custom API ===== -->
+                <div id="scap-custom-fields" class="scap-backend-fields scap-hidden">
+                    <small class="scap-field-hint">โหมดนี้ต้องกรอกค่าทางเทคนิคเอง (URL, JSON) เหมาะกับผู้ที่มี API ของ provider อื่นอยู่แล้วและรู้จักการเขียน JSON</small>
+
+                    <label for="scap-custom-url">Custom API URL (สำหรับเจนภาพ)</label>
+                    <input id="scap-custom-url" type="text" class="text_pole" placeholder="https://example.com/generate" />
+
+                    <label for="scap-custom-method">HTTP Method</label>
+                    <select id="scap-custom-method" class="text_pole">
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                        <option value="PUT">PUT</option>
+                    </select>
+
+                    <label class="checkbox_label" for="scap-custom-cors-proxy">
+                        <input id="scap-custom-cors-proxy" type="checkbox" />
+                        <span>ยิงผ่าน CORS proxy ของ SillyTavern</span>
+                    </label>
+
+                    <label for="scap-custom-api-key">API Key</label>
+                    <input id="scap-custom-api-key" type="password" class="text_pole" autocomplete="off" placeholder="วางคีย์ของ provider ที่นี่" />
+                    <small class="scap-field-hint">แทรกเป็น header ให้อัตโนมัติ (ไม่ต้องเขียนเองในช่อง Headers ด้านล่าง) — เก็บเป็น plaintext ใน settings.json</small>
+
+                    <div class="flex-container">
+                        <div class="flex1">
+                            <label for="scap-custom-api-key-header">ชื่อ Header</label>
+                            <input id="scap-custom-api-key-header" type="text" class="text_pole" placeholder="Authorization" />
+                        </div>
+                        <div class="flex1">
+                            <label for="scap-custom-api-key-prefix">Prefix ก่อนคีย์</label>
+                            <input id="scap-custom-api-key-prefix" type="text" class="text_pole" placeholder="Bearer " />
+                        </div>
+                    </div>
+
+                    <label for="scap-custom-headers">Headers อื่น ๆ เพิ่มเติม (JSON)</label>
+                    <textarea id="scap-custom-headers" class="text_pole" rows="2"></textarea>
+
+                    <label for="scap-custom-models-url">URL สำหรับโหลดรายชื่อโมเดล (GET, ไม่บังคับ)</label>
+                    <input id="scap-custom-models-url" type="text" class="text_pole" placeholder="https://example.com/v1/models" />
+
+                    <label for="scap-custom-models-path">Path ของ array รายชื่อโมเดลใน response (เว้นว่าง = ทั้ง response เป็น array เลย)</label>
+                    <input id="scap-custom-models-path" type="text" class="text_pole" placeholder="data" />
+
+                    <div class="flex-container marginTop5">
+                        <div id="scap-custom-load-models" class="menu_button menu_button_icon interactable" tabindex="0">
+                            <i class="fa-solid fa-download"></i>
+                            <span>โหลดรายชื่อโมเดล</span>
+                        </div>
+                    </div>
+                    <select id="scap-custom-model-select" class="text_pole">
+                        <option value="">— กดโหลดรายชื่อโมเดลก่อน หรือพิมพ์เองด้านล่าง —</option>
+                    </select>
+
+                    <label for="scap-custom-model">Model ที่จะใช้ (ใช้ {{model}} ใน Body Template ด้านล่าง)</label>
+                    <input id="scap-custom-model" type="text" class="text_pole" placeholder="เช่น nai-diffusion-4-5-full" />
+
+                    <label for="scap-custom-body">Body Template (JSON — ใช้ {{model}} {{prompt}} {{negative}} {{width}} {{height}} {{seed}} {{characters_json}})</label>
+                    <textarea id="scap-custom-body" class="text_pole" rows="7"></textarea>
+
+                    <label for="scap-custom-image-path">Path ของรูปใน response (เช่น images.0 หรือ data.0.b64_json — เว้นว่าง = ทั้ง response เป็นรูปเลย)</label>
+                    <input id="scap-custom-image-path" type="text" class="text_pole" placeholder="images.0" />
+                </div>
+
+                <label for="scap-image-position">ตำแหน่งรูปในข้อความ</label>
+                <select id="scap-image-position" class="text_pole">
+                    <option value="below">ใต้ข้อความ</option>
+                    <option value="above">เหนือข้อความ</option>
+                </select>
+
+                <label for="scap-image-attach-mode">วิธีแทรกรูป</label>
+                <select id="scap-image-attach-mode" class="text_pole">
+                    <option value="gallery">แบบมีปุ่ม swipe ดูรูปเก่าได้ (ค่าเริ่มต้น)</option>
+                    <option value="display-only">แบบไม่ส่งเข้า context เลย</option>
+                </select>
+                <small class="scap-field-hint" id="scap-image-attach-mode-hint"></small>
+            </div>
+
+            <!-- ===== กลุ่ม 4: อัตโนมัติ ===== -->
+            <div class="scap-settings-group">
+                <div class="scap-settings-title"><i class="fa-solid fa-clock-rotate-left"></i> อัตโนมัติ</div>
+                <small class="scap-field-hint">ให้ AI เลือกซีนเองจากข้อความล่าสุด แล้วจับภาพให้ทุก ๆ n ข้อความ</small>
+
+                <label class="checkbox_label" for="scap-auto-enabled">
+                    <input id="scap-auto-enabled" type="checkbox" />
+                    <span>เปิดใช้งานอัตโนมัติ</span>
+                </label>
+
+                <label for="scap-auto-interval">ทุก ๆ กี่ข้อความ</label>
+                <input id="scap-auto-interval" type="number" class="text_pole" min="1" step="1" />
+
+                <label for="scap-auto-mode">โหมด</label>
+                <select id="scap-auto-mode" class="text_pole">
+                    <option value="manual">แจ้งเตือน (ผู้ใช้กดเจนภาพเอง) — แนะนำ</option>
+                    <option value="full">เจนภาพให้อัตโนมัติเลย</option>
+                </select>
+
+                <div class="scap-advanced-toggle" data-target="scap-adv-auto">
+                    <i class="fa-solid fa-chevron-right"></i> ตั้งค่าขั้นสูง
+                </div>
+                <div id="scap-adv-auto" class="scap-advanced scap-hidden">
+                    <label for="scap-auto-lookback">ดูข้อความย้อนหลังกี่ข้อความ (ให้ AI เลือก)</label>
+                    <input id="scap-auto-lookback" type="number" class="text_pole" min="1" step="1" />
+
+                    <label for="scap-auto-min-chars">ข้อความสั้นกว่านี้ (ตัวอักษร) ไม่นับเป็นตัวเลือก</label>
+                    <input id="scap-auto-min-chars" type="number" class="text_pole" min="0" step="10" />
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

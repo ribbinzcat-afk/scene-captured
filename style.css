@@ -1,0 +1,200 @@
+/* Scene Captured — style.css */
+
+.scap-settings-group {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.scap-settings-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.scap-field-hint {
+    opacity: 0.7;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.scap-settings-group .flex-container {
+    gap: 8px;
+}
+
+.scap-settings-group .flex1 {
+    flex: 1;
+}
+
+/* ===== เฟส 2: ปุ่มลอยเลือกข้อความ + หน้าต่างแก้ prompt ===== */
+
+.scap-float-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    white-space: nowrap;
+}
+
+.scap-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.scap-editor label {
+    font-weight: bold;
+    margin-top: 6px;
+}
+
+.scap-editor-prefix {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    opacity: 0.85;
+}
+
+.scap-editor-prefix-chip {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 0.9em;
+}
+
+.scap-editor-chars-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.scap-editor-characters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.scap-char-row {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.scap-char-row-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.scap-char-row-head .scap-char-name {
+    flex: 1;
+}
+
+.scap-char-enabled-label {
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* ===== เฟส 3: ปุ่มจับซีนตอนกำลังเจนภาพ ===== */
+
+.scap-mes-capture.scap-busy {
+    opacity: 0.85;
+}
+
+/* ===== เฟส 4: ตาราง 5x5 เลือกตำแหน่งตัวละคร ===== */
+
+.scap-char-grid-label {
+    font-size: 0.85em;
+    opacity: 0.75;
+    margin-top: 4px;
+}
+
+.scap-char-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+    max-width: 140px;
+    margin-top: 2px;
+}
+
+.scap-char-grid-cell {
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 3px;
+    cursor: pointer;
+    background: var(--SmartThemeBlurTintColor);
+}
+
+.scap-char-grid-cell:hover {
+    border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor));
+}
+
+.scap-char-grid-cell.scap-grid-selected {
+    background: var(--SmartThemeQuoteColor, var(--SmartThemeEmColor));
+    border-color: var(--SmartThemeQuoteColor, var(--SmartThemeEmColor));
+}
+
+/* ===== เฟส 4: ฟิลด์เฉพาะ backend (NAI ตรง / Custom API) ===== */
+
+.scap-backend-fields {
+    margin-top: 6px;
+    padding-left: 8px;
+    border-left: 2px solid var(--SmartThemeBorderColor);
+}
+
+.scap-token-warning {
+    color: var(--warning, #e6a23c);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.scap-hidden {
+    display: none !important;
+}
+
+/* ===== ปุ่ม "ตั้งค่าขั้นสูง" แบบพับเก็บได้ (สำหรับผู้ใช้ทั่วไปที่ไม่ต้องยุ่งกับค่าลึก ๆ) ===== */
+
+.scap-advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    opacity: 0.8;
+    margin-top: 8px;
+    padding: 4px 0;
+    font-size: 0.9em;
+    user-select: none;
+}
+
+.scap-advanced-toggle:hover {
+    opacity: 1;
+}
+
+.scap-advanced-toggle i {
+    transition: transform 0.15s ease;
+    width: 0.8em;
+}
+
+.scap-advanced {
+    border-left: 2px solid var(--SmartThemeBorderColor);
+    padding-left: 8px;
+    margin-top: 4px;
+}
+
+/* ===== โหมด display-only: รูปที่ฝังตรงใน extra.display_text ===== */
+
+.scap-inline-img {
+    max-width: 100%;
+    border-radius: 8px;
+    display: block;
+    margin: 0.5em 0;
+}
