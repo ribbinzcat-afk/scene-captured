@@ -16,11 +16,23 @@ function buildSlashNamedArgs(argsObj) {
         .join(" ");
 }
 
+// รุ่นที่ไม่รองรับ/ไม่จำเป็นต้องใช้ SMEA — ท่าเดียวกับ getNovelParams() ของ ST เอง (stable-diffusion/index.js)
+// ขยายเพิ่ม V5 เองเพราะยังไม่มีในซอร์ส ST (ใหม่กว่า) แต่แนวโน้มเดียวกับที่ NovelAI บอกไว้ตอนเลิกใช้ SMEA กับรุ่นความละเอียดสูงขึ้น
+const SMEA_UNSUPPORTED_MODELS = ["nai-diffusion-4-curated-preview", "nai-diffusion-4-full", "nai-diffusion-5-full", "nai-diffusion-5-curated"];
+
+function getEffectiveSmea(params) {
+    if (params.sampler === "ddim" || SMEA_UNSUPPORTED_MODELS.includes(params.model)) {
+        return { sm: false, sm_dyn: false };
+    }
+    return { sm: Boolean(params.smea), sm_dyn: Boolean(params.smeaDyn) };
+}
+
 // ===== nai-st: ยิงผ่าน endpoint ของ ST เอง (/api/novelai/generate-image) =====
 // จำกัด: ST ตัด characterPrompts/char_captions ทิ้งฝั่ง server (ดูแผนงาน) — รวม prompt ตัวละครเข้า base ให้หมด
 async function generateViaNaiSt(ctx, scenePrompt, params, signal) {
     const prompt = flattenScenePrompt(scenePrompt, params.prefix);
     const negative = scenePrompt.negative || params.negativePrompt || "";
+    const { sm, sm_dyn } = getEffectiveSmea(params);
 
     const response = await fetch("/api/novelai/generate-image", {
         method: "POST",
@@ -39,8 +51,8 @@ async function generateViaNaiSt(ctx, scenePrompt, params, signal) {
             upscale_ratio: params.upscaleRatio,
             decrisper: params.decrisper,
             variety_boost: params.varietyBoost,
-            sm: params.smea,
-            sm_dyn: params.smeaDyn,
+            sm,
+            sm_dyn,
             seed: params.seed,
         }),
     });
@@ -137,6 +149,7 @@ async function generateViaNaiDirect(ctx, scenePrompt, params, signal) {
     // หมายเหตุ: โหมดนี้ "ไม่" ยุบ prompt ตัวละครเข้า base — ส่งแยกผ่าน characterPrompts/char_captions แทน
     const prompt = [params.prefix, scenePrompt.base].filter(Boolean).join(", ");
     const negative = scenePrompt.negative || params.negativePrompt || "";
+    const { sm, sm_dyn } = getEffectiveSmea(params);
 
     const body = {
         action: "generate",
@@ -162,8 +175,8 @@ async function generateViaNaiDirect(ctx, scenePrompt, params, signal) {
             dynamic_thresholding: Boolean(params.decrisper),
             legacy: false,
             legacy_v3_extend: false,
-            sm: Boolean(params.smea),
-            sm_dyn: Boolean(params.smeaDyn),
+            sm,
+            sm_dyn,
             uncond_scale: 1,
             skip_cfg_above_sigma: params.varietyBoost ? calculateSkipCfgAboveSigma(params.width, params.height, params.model) : null,
             use_coords: useCoords,

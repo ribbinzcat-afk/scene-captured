@@ -146,3 +146,26 @@ export function buildFloatingCaptureButton() {
         <span>จับซีนนี้</span>
     </div>`);
 }
+
+// ฟอร์มเลือกแหล่งอ้างอิงสำหรับ "เจนรูปด่วน" — ไม่ต้องเลือกข้อความในแชทก่อน เรียกจากปุ่มไม้กายสิทธิ์/slash command ได้เลย
+export function buildQuickGenerateForm(charName, personaName) {
+    return $(`
+    <div class="scap-quickgen">
+        <h3><i class="fa-solid fa-camera"></i> เจนรูปด่วน</h3>
+        <label for="scap-quickgen-source">อ้างอิงจาก</label>
+        <select id="scap-quickgen-source" class="text_pole">
+            <option value="character">ตัวละครปัจจุบัน (${escapeHtml(charName || "-")})</option>
+            <option value="persona">Persona ของฉัน (${escapeHtml(personaName || "-")})</option>
+            <option value="custom">เขียนเอง (ไม่อ้างอิงตัวละคร/persona)</option>
+        </select>
+        <label for="scap-quickgen-brief">รายละเอียดเพิ่มเติม (ไม่บังคับ — เช่น ชุด ท่าทาง ฉาก)</label>
+        <textarea id="scap-quickgen-brief" class="text_pole" rows="4" placeholder="เช่น ใส่ชุดว่ายน้ำ ยืนอยู่ริมทะเล"></textarea>
+    </div>`);
+}
+
+export function readQuickGenerateForm($container) {
+    return {
+        source: $container.find("#scap-quickgen-source").val(),
+        brief: String($container.find("#scap-quickgen-brief").val() || "").trim(),
+    };
+}

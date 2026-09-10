@@ -166,6 +166,19 @@ export function parseScenePrompt(raw) {
 // ===== เฟส 5: โหมดอัตโนมัติ — ให้ AI เลือกข้อความเองจากรายการล่าสุด =====
 
 // ประกอบ messages ให้ AI เลือกข้อความ (ระบุ mesId) จากรายการที่มีเลขกำกับ แล้วเขียน prompt ให้เลย
+// สำหรับ "เจนรูปด่วน" — ไม่มีข้อความฉากจากแชทมาให้ ผู้ใช้ระบุโจทย์เองหรืออ้างอิงตัวละคร/persona ตรง ๆ
+export function buildPortraitMessages(briefText, systemPrompt, contextPreamble = "") {
+    const preamble = String(contextPreamble || "").trim();
+    const user =
+        (preamble ? `${preamble}\n\n` : "") +
+        `นี่ไม่ใช่ฉากจากบทสนทนา แต่เป็นโจทย์ให้วาดภาพโดยตรง:\n"""\n${String(briefText || "").trim()}\n"""\n\n` +
+        `เขียน prompt ตามกติกาที่กำหนด (เน้นภาพเดี่ยว ไม่ต้องเดาใส่ฉาก/สถานการณ์เพิ่มเองถ้าโจทย์ไม่ได้ระบุ) ตอบเป็น JSON เท่านั้น`;
+    return [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: user },
+    ];
+}
+
 export function buildAutoSceneMessages(candidatesText, systemPrompt, contextPreamble = "") {
     const preamble = String(contextPreamble || "").trim();
     const autoSystem = `${systemPrompt}\n\nโหมดนี้ต้องเลือกข้อความเองจากรายการที่ให้มาด้วย ตอบ JSON ที่มีคีย์ "mesId" (ตัวเลข) ระบุหมายเลขข้อความที่เลือกเพิ่มจากปกติ:\n{"mesId": 0, "base": "...", "negative": "", "characters": [...]}`;
@@ -208,10 +221,15 @@ export function parseAutoScenePrompt(raw) {
 }
 
 // รวม prefix + base + ตัวละครที่เปิดใช้งาน เป็น prompt เดียว (ใช้กับ backend ที่ไม่รองรับแยกตัวละคร)
+// ตัดจุลภาค/ช่องว่างท้ายออกก่อนต่อกัน กัน ", ," ซ้ำเวลา prefix ผู้ใช้เผลอใส่จุลภาคท้ายมาเอง (เช่น "masterpiece, best quality, ")
+function trimTrailingComma(s) {
+    return String(s || "").trim().replace(/,\s*$/, "");
+}
+
 export function flattenScenePrompt(scenePrompt, prefix) {
-    const parts = [String(prefix || "").trim(), String(scenePrompt.base || "").trim()];
+    const parts = [trimTrailingComma(prefix), trimTrailingComma(scenePrompt.base)];
     for (const ch of scenePrompt.characters || []) {
-        if (ch.enabled && ch.prompt) parts.push(ch.prompt);
+        if (ch.enabled && ch.prompt) parts.push(trimTrailingComma(ch.prompt));
     }
     return parts.filter(Boolean).join(", ");
 }

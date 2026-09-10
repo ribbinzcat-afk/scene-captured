@@ -198,3 +198,21 @@
     display: block;
     margin: 0.5em 0;
 }
+
+/* ===== ฟอร์ม "เจนรูปด่วน" (ปุ่มไม้กายสิทธิ์ / /scap) ===== */
+
+.scap-quickgen {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+
+.scap-quickgen h3 {
+    margin: 0 0 4px 0;
+}
+
+.scap-quickgen label {
+    font-weight: bold;
+    margin-top: 6px;
+}

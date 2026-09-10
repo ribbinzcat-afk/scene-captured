@@ -12,9 +12,9 @@ import {
     setSetting,
     loadSettings,
 } from "./src/store.js";
-import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt } from "./src/prompt.js";
+import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt, buildPortraitMessages } from "./src/prompt.js";
 import { buildCharacterContext } from "./src/context.js";
-import { buildPromptEditor, readPromptEditor, buildFloatingCaptureButton } from "./src/ui.js";
+import { buildPromptEditor, readPromptEditor, buildFloatingCaptureButton, buildQuickGenerateForm, readQuickGenerateForm } from "./src/ui.js";
 import { getBackend, testNaiDirectConnection, fetchCustomModels } from "./src/backends.js";
 import { saveBase64AsFile } from "../../../utils.js";
 
@@ -61,7 +61,16 @@ function populateSettingsForm() {
     $("#scap-height").val(height);
     $("#scap-resolution").val(matchResolutionPreset(width, height));
 
-    $("#scap-model").val(getSetting("model"));
+    const currentModel = getSetting("model");
+    const $modelSelect = $("#scap-model");
+    const isKnownModel = $modelSelect.find(`option[value="${CSS.escape(currentModel)}"]`).length > 0;
+    if (isKnownModel) {
+        $modelSelect.val(currentModel);
+        $("#scap-model-custom").val("").addClass("scap-hidden");
+    } else {
+        $modelSelect.val("__custom__");
+        $("#scap-model-custom").val(currentModel).removeClass("scap-hidden");
+    }
     $("#scap-sampler").val(getSetting("sampler"));
     $("#scap-scheduler").val(getSetting("scheduler"));
     $("#scap-steps").val(getSetting("steps"));
@@ -235,6 +244,17 @@ function bindSettingsFormHandlers() {
     });
 
     $(document).on("change", "#scap-model", function () {
+        const value = $(this).val();
+        if (value === "__custom__") {
+            $("#scap-model-custom").removeClass("scap-hidden").trigger("focus");
+            setSetting("model", $("#scap-model-custom").val() || "");
+        } else {
+            $("#scap-model-custom").addClass("scap-hidden");
+            setSetting("model", value);
+        }
+    });
+
+    $(document).on("input", "#scap-model-custom", function () {
         setSetting("model", $(this).val());
     });
 
@@ -431,6 +451,7 @@ function bindSettingsFormHandlers() {
 
 let isCaptureBusy = false;
 let $floatBtn = null;
+let selectionChangeDebounceTimer = null;
 let pendingSelection = null; // { text, mesId } — เก็บตอนกดปุ่มลอย
 
 // รวมค่าตั้งค่า 4 ตัวที่คุม buildCharacterContext() ไว้ที่เดียว กันเขียนซ้ำ 2 จุด (capture ปกติ + auto)
@@ -718,6 +739,78 @@ async function openSceneEditor(scenePrompt, mesId) {
         await generateImageForMessage(mesId, edited);
     } else {
         toastr.success("บันทึก prompt แล้ว", "Scene Captured");
+    }
+}
+
+// เจนรูปโดยไม่ต้องเลือกข้อความในแชทก่อน — เรียกจากปุ่มไม้กายสิทธิ์หรือ /scap ได้เลย ไม่ต้องสลับไปหาข้อความ
+// สร้างข้อความใหม่ท้ายแชทไว้เป็นที่แปะรูป (ท่าเดียวกับที่ /imagine ของ ST เองทำ) แล้วส่งต่อเข้า flow ปกติ (แก้ prompt/เจนภาพ/regen/ลบ ใช้ร่วมกับข้อความอื่นได้หมด)
+async function openQuickGenerate() {
+    if (isCaptureBusy) {
+        toastr.info("กำลังเขียน prompt อยู่ รอสักครู่", "Scene Captured");
+        return;
+    }
+
+    const ctx = getContext();
+    const $form = buildQuickGenerateForm(ctx.name2, ctx.name1);
+    const result = await ctx.callGenericPopup($form, ctx.POPUP_TYPE.CONFIRM, "", {
+        okButton: "เขียน prompt",
+        cancelButton: "ยกเลิก",
+    });
+    if (result !== ctx.POPUP_RESULT.AFFIRMATIVE) return;
+
+    const { source, brief } = readQuickGenerateForm($form);
+
+    let briefText;
+    if (source === "character") {
+        briefText = `วาดภาพเดี่ยวของตัวละคร ${ctx.name2 || ""} เน้นหน้าตาและรูปร่างให้ตรงกับที่กำหนดไว้`;
+    } else if (source === "persona") {
+        briefText = `วาดภาพเดี่ยวของ ${ctx.name1 || "ผู้ใช้"} (ตัวตนที่ผู้ใช้สวมบทบาทอยู่)`;
+    } else {
+        briefText = brief || "ภาพเดี่ยวสวยงามหนึ่งภาพ";
+    }
+    if (source !== "custom" && brief) briefText += `\nรายละเอียดเพิ่มเติม: ${brief}`;
+
+    isCaptureBusy = true;
+    const loadingToast = toastr.info("กำลังคิด prompt…", "Scene Captured", { timeOut: 0, extendedTimeOut: 0 });
+    try {
+        const contextPreamble = await buildCharacterContext({
+            ...getCharacterContextOptions(),
+            includeCharacterCard: source === "persona" ? false : getCharacterContextOptions().includeCharacterCard,
+            includePersona: source === "character" ? false : getCharacterContextOptions().includePersona,
+        });
+        const messages = buildPortraitMessages(briefText, getSetting("systemPrompt"), contextPreamble);
+        const raw = await scapGenerate(messages, getSetting("responseLength"));
+        const scenePrompt = parseScenePrompt(raw);
+        toastr.clear(loadingToast);
+
+        const promptTitle = flattenScenePrompt(scenePrompt, getSetting("prefix"));
+        const name = source === "persona" ? ctx.name1 || "User" : ctx.name2 || extensionName;
+        const message = {
+            name,
+            is_user: false,
+            is_system: false,
+            send_date: ctx.humanizedDateTime ? ctx.humanizedDateTime() : Date.now(),
+            mes: `[ภาพประกอบ: ${promptTitle}]`,
+            extra: { scene_captured: { prompt: scenePrompt, params: null, backend: null, at: Date.now(), imageUrl: null } },
+        };
+        ctx.chat.push(message);
+        const mesId = ctx.chat.length - 1;
+        ctx.addOneMessage(message);
+        ensureCaptureButtonOnRenderedMessages();
+        applyImagePositionToAllMessages();
+        await ctx.saveChat();
+
+        if (getSetting("autoSendToImageGen")) {
+            await generateImageForMessage(mesId, scenePrompt);
+        } else {
+            await openSceneEditor(scenePrompt, mesId);
+        }
+    } catch (e) {
+        toastr.clear(loadingToast);
+        console.error(`[${extensionName}] เจนรูปด่วนล้มเหลว:`, e);
+        toastr.error(String(e?.message || e), "Scene Captured — เจนรูปด่วน");
+    } finally {
+        isCaptureBusy = false;
     }
 }
 
@@ -1013,6 +1106,32 @@ jQuery(async () => {
         ctx.eventSource.on(ctx.eventTypes.CHARACTER_MESSAGE_RENDERED, onAutoCharacterMessageRendered);
         ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, resetAutoCounter);
 
+        // ===== เฟส 7: เจนรูปด่วน (ปุ่มไม้กายสิทธิ์ + /scap) — เจนรูปตัวละคร/persona/โจทย์เอง โดยไม่ต้องเลือกข้อความในแชทก่อน =====
+        const wandMenu = document.getElementById("extensionsMenu");
+        if (wandMenu) {
+            const wandButton = document.createElement("div");
+            wandButton.id = "scap_wand_button";
+            wandButton.classList.add("list-group-item", "flex-container", "flexGap5", "interactable");
+            wandButton.title = "เจนรูปตัวละคร/persona/โจทย์เอง โดยไม่ต้องเลือกข้อความก่อน";
+            wandButton.innerHTML = `<div class="fa-fw fa-solid fa-camera extensionsMenuExtensionButton"></div><span>เจนรูปด่วน (Scene Captured)</span>`;
+            wandButton.addEventListener("click", () => void openQuickGenerate());
+            wandMenu.append(wandButton);
+        }
+
+        if (ctx.SlashCommandParser && ctx.SlashCommand) {
+            ctx.SlashCommandParser.addCommandObject(
+                ctx.SlashCommand.fromProps({
+                    name: "scap",
+                    callback: async () => {
+                        await openQuickGenerate();
+                        return "";
+                    },
+                    aliases: ["scene-captured"],
+                    helpString: "เปิดหน้าต่างเจนรูปด่วนของ Scene Captured (ตัวละครปัจจุบัน/persona/โจทย์เอง) โดยไม่ต้องเลือกข้อความในแชทก่อน",
+                }),
+            );
+        }
+
         $(document).on("click", ".scap-mes-capture", function () {
             const mesId = Number($(this).closest(".mes").attr("mesid"));
             // ปุ่มกำลังสปิน (กำลังเจนภาพข้อความนี้อยู่) — กดซ้ำ = ยกเลิก แทนที่จะเริ่มจับซีนใหม่
@@ -1114,16 +1233,15 @@ jQuery(async () => {
             captureFlow(text, mesId);
         });
 
-        $(document).on("mouseup", "#chat", () => {
-            // หน่วงเฟรมเดียวให้ browser อัปเดต selection ให้เสร็จก่อนอ่านค่า
-            setTimeout(handleChatSelectionChange, 0);
+        // ใช้ selectionchange เป็นหลัก (ไม่ใช่ mouseup) — เพราะบนมือถือ ลากเลือกข้อความด้วยนิ้วไม่ยิง mouseup
+        // (เป็น native OS text-selection gesture ไม่ใช่ pointer event ปกติของหน้าเว็บ) แต่ selectionchange ยิงแน่นอนทุกวิธีเลือก
+        // (ลาก/แตะค้าง/double-tap/shift+arrow) ไม่ว่าจะเป็นเมาส์หรือนิ้ว — หน่วง debounce ไว้เพราะ event นี้ยิงถี่มากระหว่างลาก
+        document.addEventListener("selectionchange", () => {
+            clearTimeout(selectionChangeDebounceTimer);
+            selectionChangeDebounceTimer = setTimeout(handleChatSelectionChange, 150);
         });
 
-        $(document).on("keyup", "#chat", (e) => {
-            if (e.shiftKey || e.key === "Shift") setTimeout(handleChatSelectionChange, 0);
-        });
-
-        $(document).on("mousedown", (e) => {
+        $(document).on("mousedown touchstart", (e) => {
             if ($floatBtn && !$(e.target).closest("#scap-float-btn").length) hideFloatButton();
         });
 

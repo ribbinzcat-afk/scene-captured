@@ -96,6 +96,8 @@
 
                     <label for="scap-model">โมเดล NovelAI</label>
                     <select id="scap-model" class="text_pole">
+                        <option value="nai-diffusion-5-full">NAI Diffusion Anime V5 (Full)</option>
+                        <option value="nai-diffusion-5-curated">NAI Diffusion Anime V5 (Curated)</option>
                         <option value="nai-diffusion-4-5-full">NAI Diffusion Anime V4.5 (Full)</option>
                         <option value="nai-diffusion-4-5-curated">NAI Diffusion Anime V4.5 (Curated)</option>
                         <option value="nai-diffusion-4-full">NAI Diffusion Anime V4 (Full)</option>
@@ -103,7 +105,10 @@
                         <option value="nai-diffusion-3">NAI Diffusion Anime V3</option>
                         <option value="nai-diffusion-2">NAI Diffusion Anime V2</option>
                         <option value="nai-diffusion-furry-3">NAI Diffusion Furry V3</option>
+                        <option value="__custom__">อื่น ๆ (พิมพ์ชื่อโมเดลเอง)</option>
                     </select>
+                    <input id="scap-model-custom" type="text" class="text_pole scap-hidden" placeholder="เช่น nai-diffusion-5-full" />
+                    <small class="scap-field-hint">⚠️ ชื่อรุ่น V5 อ้างอิงจากรูปแบบการตั้งชื่อของ NovelAI เอง (nai-diffusion-5-full / -curated) ยังไม่ได้ยืนยันกับ API จริง 100% — ถ้าเจนแล้ว error ว่าไม่รู้จักโมเดล ให้ลองพิมพ์ชื่อที่ถูกต้องเองในช่อง "อื่น ๆ" ด้านบน</small>
 
                     <div class="flex-container">
                         <div class="flex1">

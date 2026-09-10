@@ -59,7 +59,7 @@ export const defaultSettings = {
     resolutionPreset: "832x1216",
 
     // พารามิเตอร์ NovelAI
-    model: "nai-diffusion-4-5-full",
+    model: "nai-diffusion-5-full",  // ⚠️ ชื่อ ID นี้เดาจากรูปแบบการตั้งชื่อของ NovelAI เอง ยังไม่ยืนยัน 100% กับ API จริง — ดูหมายเหตุในหน้าตั้งค่า
     sampler: "k_euler_ancestral",
     scheduler: "karras",
     steps: 28,
