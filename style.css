@@ -191,8 +191,12 @@
 }
 
 /* ===== โหมด display-only: รูปที่ฝังตรงใน extra.display_text ===== */
-
-.scap-inline-img {
+/* ⚠️ ST รัน DOMPurify กับ HTML ในข้อความเสมอ (public/scripts/chats.js:uponSanitizeAttribute) แปลง class
+   ทุกตัวที่ไม่ได้ขึ้นต้นด้วย fa-/note-/monospace ให้เป็น custom-<ชื่อเดิม> อัตโนมัติ (กัน HTML ในข้อความ
+   ปลอมตัวเป็น UI ของ ST) เจอจริงจากการทดสอบ 2026-09-11 — เลยต้องเลือกทั้ง 2 ชื่อไว้ (ชื่อเดิมไว้เผื่ออนาคต
+   ST เปลี่ยนพฤติกรรม, custom-ชื่อเดิม คือชื่อจริงที่ render ออกมาตอนนี้) */
+.scap-inline-img,
+.custom-scap-inline-img {
     max-width: 100%;
     border-radius: 8px;
     display: block;

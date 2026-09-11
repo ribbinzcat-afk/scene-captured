@@ -565,6 +565,17 @@ function escapeHtmlAttr(s) {
     return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// เหมือน escapeHtmlAttr แต่เข้ารหัสอักขระที่ markdown ใช้เป็น syntax ด้วย (_ * ` ~ [ ] ( ) # |)
+// จำเป็นสำหรับ "display-only" mode เท่านั้น — HTML ดิบที่เราสร้าง (imgTag) ถูกฝังใน extra.display_text
+// ซึ่งโดน ST รัน markdown-to-HTML ทับอีกที (messageFormatting) ตัว parser ไม่รู้ว่านี่คือ attribute value
+// เจอมาแล้วจริง: prompt ที่มี "_" (เช่น artist tag "arisaka_ako") ทำให้ markdown จับคู่ underscore
+// ข้าม src="..." ทั้งก้อนแล้วแปลงเป็น <em> กลางทาง จน src พังทั้งสตริง (ดู session 2026-09-11)
+// เข้ารหัสเป็น HTML numeric entity แทน — parser เห็นแค่ตัวอักษรธรรมดา ไม่ตรงกับ syntax ใด ๆ
+// ส่วนเบราว์เซอร์ยัง decode กลับเป็นอักขระเดิมตอน render attribute ปกติ (โหมด gallery ไม่ผ่าน markdown เลยไม่ต้องใช้ตัวนี้)
+function mdSafeAttr(s) {
+    return escapeHtmlAttr(s).replace(/[_*`~\[\]()#|]/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 // โหมด "gallery" (ค่าเริ่มต้น) — ใช้ extra.media[] ของ ST เอง ได้ปุ่ม swipe ดูรูปเก่า/regen มาฟรี
 // ⚠️ ข้อควรรู้: ถ้าเปิด "Send inline media" ของ ST ไว้ + โมเดลที่ใช้รองรับรูปภาพ (vision) รูปในโหมดนี้จะถูกส่งเข้า context จริง (ยืนยันจากซอร์ส ST — ไม่แยกว่ารูปมาจาก extension ไหน)
 function attachMediaGallery(ctx, message, mesId, url, promptTitle, negative, width, height) {
@@ -602,7 +613,7 @@ async function attachMediaDisplayOnly(ctx, message, mesId, url, promptTitle) {
         await deleteImageFileIfLocal(prevUrl);
     }
 
-    const imgTag = `<img src="${escapeHtmlAttr(url)}" title="${escapeHtmlAttr(promptTitle)}" class="scap-inline-img" />`;
+    const imgTag = `<img src="${mdSafeAttr(url)}" title="${mdSafeAttr(promptTitle)}" class="scap-inline-img" />`;
     const baseMes = message.mes; // ต้นฉบับที่ LLM เห็น — ห้ามแก้ค่านี้เด็ดขาด
     message.extra.display_text = getSetting("imagePosition") === "above" ? `${imgTag}\n\n${baseMes}` : `${baseMes}\n\n${imgTag}`;
 
