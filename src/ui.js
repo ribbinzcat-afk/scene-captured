@@ -51,7 +51,7 @@ function buildCharacterRowHtml(ch, uid) {
 
 // สร้างหน้าต่างแก้ prompt เป็น jQuery element ที่ยังคงอ้างอิงได้หลัง popup ปิด
 // (ต้องส่ง element/jQuery object ให้ callGenericPopup ไม่ใช่ string ถึงจะอ่านค่ากลับได้)
-export function buildPromptEditor(scenePrompt, prefixText) {
+export function buildPromptEditor(scenePrompt, prefixText, settingsNegativeText) {
     const $container = $(`
     <div class="scap-editor">
         <div class="scap-editor-prefix">
@@ -62,7 +62,12 @@ export function buildPromptEditor(scenePrompt, prefixText) {
         <label>Base prompt (ภาพรวมของฉาก)</label>
         <textarea class="scap-editor-base text_pole" rows="3"></textarea>
 
-        <label>Negative prompt (เว้นว่าง = ใช้ค่าเริ่มต้นจากหน้าตั้งค่า)</label>
+        <div class="scap-editor-prefix">
+            <span class="scap-editor-prefix-label">Negative จากหน้าตั้งค่า (แทรกอัตโนมัติเสมอ):</span>
+            <span class="scap-editor-prefix-chip">${escapeHtml(settingsNegativeText) || "(ว่าง)"}</span>
+        </div>
+
+        <label>Negative เพิ่มเติมเฉพาะภาพนี้ (ไม่บังคับ)</label>
         <textarea class="scap-editor-negative text_pole" rows="2"></textarea>
 
         <div class="scap-editor-chars-head">
@@ -138,12 +143,24 @@ export function readPromptEditor($container) {
     };
 }
 
-// ปุ่มลอยที่โผล่ตอนลากเลือกข้อความในแชท
-export function buildFloatingCaptureButton() {
+// แถบเลือกย่อหน้า — ต่อท้าย .mes_block ตอนกดกล้องเข้าโหมดเลือก (ไม่ใช่ popup — อยู่ในแชทเลย)
+export function buildParagraphSelectBar() {
     return $(`
-    <div id="scap-float-btn" class="scap-float-btn menu_button interactable" title="จับซีนนี้ด้วย Scene Captured">
-        <i class="fa-solid fa-camera"></i>
-        <span>จับซีนนี้</span>
+    <div class="scap-select-bar" role="group" aria-label="เลือกย่อหน้าเพื่อจับซีน">
+        <div class="scap-select-bar-row scap-select-bar-status">
+            <i class="fa-solid fa-hand-pointer"></i>
+            <span class="scap-select-count">เลือกแล้ว 0 ย่อหน้า</span>
+            <div class="scap-select-all menu_button menu_button_icon interactable"><span>ทั้งหมด</span></div>
+        </div>
+        <div class="scap-select-bar-row">
+            <input type="text" class="scap-select-brief text_pole" placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น ใส่ชุดว่ายน้ำ" />
+        </div>
+        <div class="scap-select-bar-row scap-select-bar-actions">
+            <div class="scap-select-cancel menu_button interactable"><span>ยกเลิก</span></div>
+            <div class="scap-select-confirm menu_button menu_button_icon interactable scap-disabled">
+                <i class="fa-solid fa-wand-magic-sparkles"></i><span>เจน prompt</span>
+            </div>
+        </div>
     </div>`);
 }
 

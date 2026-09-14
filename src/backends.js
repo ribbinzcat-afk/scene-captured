@@ -2,7 +2,7 @@
 // รวม backend สำหรับส่งต่อ image gen — ทุกตัวหน้าตาเดียวกัน: generate(ctx, scenePrompt, params, signal) -> {format,data} หรือ {url}
 // deps: prompt.js เท่านั้น — ห้าม import จาก index.js
 
-import { flattenScenePrompt } from "./prompt.js";
+import { flattenScenePrompt, mergeNegative } from "./prompt.js";
 
 // escape ค่าที่จะฝังลง STscript (/imagine ...) กัน quote/backslash ทำให้ parser คำสั่งพัง
 function escapeSlashArg(value) {
@@ -31,7 +31,7 @@ function getEffectiveSmea(params) {
 // จำกัด: ST ตัด characterPrompts/char_captions ทิ้งฝั่ง server (ดูแผนงาน) — รวม prompt ตัวละครเข้า base ให้หมด
 async function generateViaNaiSt(ctx, scenePrompt, params, signal) {
     const prompt = flattenScenePrompt(scenePrompt, params.prefix);
-    const negative = scenePrompt.negative || params.negativePrompt || "";
+    const negative = mergeNegative(params.negativePrompt, scenePrompt.negative);
     const { sm, sm_dyn } = getEffectiveSmea(params);
 
     const response = await fetch("/api/novelai/generate-image", {
@@ -74,7 +74,7 @@ async function generateViaStImagine(ctx, scenePrompt, params, signal) {
         throw new Error("เวอร์ชัน SillyTavern นี้ไม่มี executeSlashCommandsWithOptions");
     }
     const prompt = flattenScenePrompt(scenePrompt, params.prefix);
-    const negative = scenePrompt.negative || params.negativePrompt || "";
+    const negative = mergeNegative(params.negativePrompt, scenePrompt.negative);
 
     const namedArgs = buildSlashNamedArgs({
         quiet: "true",
@@ -148,7 +148,7 @@ async function generateViaNaiDirect(ctx, scenePrompt, params, signal) {
 
     // หมายเหตุ: โหมดนี้ "ไม่" ยุบ prompt ตัวละครเข้า base — ส่งแยกผ่าน characterPrompts/char_captions แทน
     const prompt = [params.prefix, scenePrompt.base].filter(Boolean).join(", ");
-    const negative = scenePrompt.negative || params.negativePrompt || "";
+    const negative = mergeNegative(params.negativePrompt, scenePrompt.negative);
     const { sm, sm_dyn } = getEffectiveSmea(params);
 
     const body = {
@@ -290,7 +290,7 @@ async function generateViaCustom(ctx, scenePrompt, params, signal) {
     const vars = {
         model: params.customModel || "",
         prompt: promptText,
-        negative: scenePrompt.negative || params.negativePrompt || "",
+        negative: mergeNegative(params.negativePrompt, scenePrompt.negative),
         width: params.width,
         height: params.height,
         seed: Number.isFinite(params.seed) ? params.seed : -1,

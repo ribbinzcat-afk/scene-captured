@@ -40,11 +40,16 @@ export function stripReasoning(raw) {
 }
 
 // ประกอบ messages สำหรับส่งให้ LLM จากข้อความฉากที่เลือกมา
-export function buildSceneMessages(sceneText, systemPrompt, contextPreamble = "") {
+export function buildSceneMessages(sceneText, systemPrompt, contextPreamble = "", brief = "") {
     const preamble = String(contextPreamble || "").trim();
+    const briefText = String(brief || "").trim();
+    // บรีฟอยู่เป็นบล็อกแยกต่างหาก ไม่ต่อท้าย sceneText ดื้อ ๆ — ไม่งั้น AI แยกไม่ออกว่าอันไหนคือเนื้อฉาก (ให้บรรยาย)
+    // อันไหนคือคำสั่งของผู้ใช้ (ให้ทำตาม) โดยให้น้ำหนักคำสั่งผู้ใช้มากกว่าถ้าขัดแย้งกับเนื้อฉาก
     const user =
         (preamble ? `${preamble}\n\n` : "") +
-        `ข้อความฉากที่เลือกมา:\n"""\n${String(sceneText || "").trim()}\n"""\n\nเขียน prompt ตามกติกาที่กำหนด ตอบเป็น JSON เท่านั้น`;
+        `ข้อความฉากที่เลือกมา:\n"""\n${String(sceneText || "").trim()}\n"""\n\n` +
+        (briefText ? `คำสั่งเพิ่มเติมจากผู้ใช้ (ให้น้ำหนักมากกว่ารายละเอียดอื่นถ้าขัดแย้งกัน):\n"""\n${briefText}\n"""\n\n` : "") +
+        `เขียน prompt ตามกติกาที่กำหนด ตอบเป็น JSON เท่านั้น`;
     return [
         { role: "system", content: systemPrompt },
         { role: "user", content: user },
@@ -232,4 +237,23 @@ export function flattenScenePrompt(scenePrompt, prefix) {
         if (ch.enabled && ch.prompt) parts.push(trimTrailingComma(ch.prompt));
     }
     return parts.filter(Boolean).join(", ");
+}
+
+// รวม negative จากหน้าตั้งค่ากับของ AI เข้าด้วยกัน (ไม่ใช่แทนที่) — ค่าจากหน้าตั้งค่าเป็นฐานเสมอ
+// เดิมโค้ดใช้ "scenePrompt.negative || params.negativePrompt" ซึ่งพอ AI ตอบ negative มา (เกือบทุกครั้ง)
+// ค่าที่ผู้ใช้ตั้งไว้จะถูกทิ้งไปเงียบ ๆ ทันที — ดู session 2026-09-14 ที่เจอบั๊กนี้จากการใช้งานจริง
+export function mergeNegative(settingsNegative, aiNegative) {
+    const seen = new Set();
+    const out = [];
+    for (const src of [settingsNegative, aiNegative]) {
+        for (const tag of String(src || "").split(",")) {
+            const t = tag.trim();
+            if (!t) continue;
+            const key = t.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(t);
+        }
+    }
+    return out.join(", ");
 }

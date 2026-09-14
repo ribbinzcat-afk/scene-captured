@@ -12,9 +12,9 @@ import {
     setSetting,
     loadSettings,
 } from "./src/store.js";
-import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt, buildPortraitMessages } from "./src/prompt.js";
+import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt, buildPortraitMessages, mergeNegative } from "./src/prompt.js";
 import { buildCharacterContext } from "./src/context.js";
-import { buildPromptEditor, readPromptEditor, buildFloatingCaptureButton, buildQuickGenerateForm, readQuickGenerateForm } from "./src/ui.js";
+import { buildPromptEditor, readPromptEditor, buildParagraphSelectBar, buildQuickGenerateForm, readQuickGenerateForm } from "./src/ui.js";
 import { getBackend, testNaiDirectConnection, fetchCustomModels } from "./src/backends.js";
 import { saveBase64AsFile } from "../../../utils.js";
 
@@ -450,9 +450,8 @@ function bindSettingsFormHandlers() {
 // ===== เฟส 2: เลือกข้อความ -> ให้ AI เขียน prompt =====
 
 let isCaptureBusy = false;
-let $floatBtn = null;
-let selectionChangeDebounceTimer = null;
-let pendingSelection = null; // { text, mesId } — เก็บตอนกดปุ่มลอย
+// { mesId, mesTextEl, $bar, units: [{el, isWrapper}], selected: Set<number>, observer } | null
+let selectState = null;
 
 // รวมค่าตั้งค่า 4 ตัวที่คุม buildCharacterContext() ไว้ที่เดียว กันเขียนซ้ำ 2 จุด (capture ปกติ + auto)
 function getCharacterContextOptions() {
@@ -642,6 +641,9 @@ async function attachMediaToMessage(ctx, message, mesId, url, promptTitle, negat
 
 // เจนภาพจริงจาก ScenePrompt ที่มีอยู่แล้ว (ไม่เรียก LLM ซ้ำ) แล้วแทรกเข้าไปในข้อความ
 async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
+    // ข้อความนี้กำลังอยู่ในโหมดเลือกย่อหน้าอยู่ — ปิดก่อน กันชนกับ observer ที่จะรื้อ DOM ระหว่างเจนภาพ
+    if (selectState?.mesId === mesId) exitParagraphSelect("busy");
+
     const ctx = getContext();
     const message = ctx.chat[mesId];
     if (!message) {
@@ -683,7 +685,7 @@ async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
         if (!message.extra.scene_captured) message.extra.scene_captured = { prompt: scenePrompt, params: null, backend: null, at: Date.now(), imageUrl: null };
 
         const promptTitle = flattenScenePrompt(scenePrompt, params.prefix);
-        await attachMediaToMessage(ctx, message, mesId, url, promptTitle, scenePrompt.negative || params.negativePrompt, params.width, params.height);
+        await attachMediaToMessage(ctx, message, mesId, url, promptTitle, mergeNegative(params.negativePrompt, scenePrompt.negative), params.width, params.height);
 
         message.extra.scene_captured.prompt = scenePrompt;
         message.extra.scene_captured.params = params;
@@ -711,7 +713,7 @@ async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
 const POPUP_RESULT_SAVE_ONLY = 1002;
 async function openSceneEditor(scenePrompt, mesId) {
     const ctx = getContext();
-    const $container = buildPromptEditor(scenePrompt, getSetting("prefix"));
+    const $container = buildPromptEditor(scenePrompt, getSetting("prefix"), getSetting("negativePrompt"));
 
     const result = await ctx.callGenericPopup($container, ctx.POPUP_TYPE.TEXT, "", {
         wide: true,
@@ -826,7 +828,7 @@ async function openQuickGenerate() {
 }
 
 // เรียก LLM เขียน prompt จากข้อความฉากที่เลือกมา — ถ้าตั้ง "ส่งต่ออัตโนมัติ" ไว้ ข้ามหน้าแก้ไขแล้วเจนภาพเลย
-async function captureFlow(sceneText, mesId) {
+async function captureFlow(sceneText, mesId, brief = "") {
     const text = String(sceneText || "").trim();
     if (!text) {
         toastr.warning("ไม่มีข้อความให้จับซีน", "Scene Captured");
@@ -841,7 +843,7 @@ async function captureFlow(sceneText, mesId) {
     const loadingToast = toastr.info("กำลังคิด prompt จากฉากที่เลือก…", "Scene Captured", { timeOut: 0, extendedTimeOut: 0 });
     try {
         const contextPreamble = await buildCharacterContext(getCharacterContextOptions());
-        const messages = buildSceneMessages(text, getSetting("systemPrompt"), contextPreamble);
+        const messages = buildSceneMessages(text, getSetting("systemPrompt"), contextPreamble, brief);
         const raw = await scapGenerate(messages, getSetting("responseLength"));
         const scenePrompt = parseScenePrompt(raw);
         toastr.clear(loadingToast);
@@ -937,48 +939,175 @@ function applyImagePositionToAllMessages() {
     });
 }
 
-function hideFloatButton() {
-    if ($floatBtn) {
-        $floatBtn.remove();
-        $floatBtn = null;
+// ===== เลือกย่อหน้าเพื่อจับซีน (แทนการลากคลุมข้อความแบบเดิม) =====
+
+// แตกข้อความในข้อความเป็น "หน่วยที่เลือกได้" — ลูกตรงของ .mes_text เท่านั้น เอาเฉพาะ <p>
+// (ตัด <p> ที่ซ้อนใน <blockquote>/<li> ออกอัตโนมัติ + ตัด <table>/<pre>/<img> ออกเพราะไม่ใช่ลูกตรงที่เป็น p)
+// <p> ที่มี <br> ข้างใน (ข้อความ newline เดี่ยว) จะถูกแตกเป็นช่วง ๆ ห่อด้วย <span class="scap-para">
+// โดยย้าย node เดิมเข้าไป (ไม่ใช่เขียน innerHTML ใหม่) เพื่อให้ <q>/<em>/<a> คง node identity ไว้ได้
+function collectParagraphUnits(mesTextEl) {
+    const units = [];
+    const children = [...mesTextEl.children];
+    for (const p of children) {
+        if (p.tagName !== "P") continue;
+        if (!p.textContent.trim()) continue; // ว่างเปล่า (เช่น <p><img class="custom-scap-inline-img"></p> ของโหมด display-only)
+
+        if (!p.querySelector("br")) {
+            p.classList.add("scap-para");
+            units.push({ el: p, isWrapper: false });
+            continue;
+        }
+
+        // มี <br> ข้างใน — แตกเป็นช่วง ๆ คั่นด้วย <br>
+        p.classList.add("scap-para-host");
+        let span = null;
+        const flushSpan = () => {
+            if (span && span.textContent.trim()) {
+                units.push({ el: span, isWrapper: true });
+            } else if (span) {
+                // ช่วงว่างเปล่า (เช่น <br><br> ติดกัน) — คืน node กลับที่เดิมแล้วทิ้ง wrapper
+                while (span.firstChild) p.insertBefore(span.firstChild, span);
+                span.remove();
+            }
+            span = null;
+        };
+        for (const node of [...p.childNodes]) {
+            if (node.nodeType === 1 && node.tagName === "BR") {
+                flushSpan();
+                continue;
+            }
+            if (!span) {
+                span = document.createElement("span");
+                span.className = "scap-para";
+                p.insertBefore(span, node);
+            }
+            span.appendChild(node);
+        }
+        flushSpan();
     }
-    pendingSelection = null;
+    return units;
 }
 
-// ตรวจ selection ในแชท — ถ้าเลือกข้อความใน .mes_text อยู่ ให้โชว์ปุ่มลอยใกล้จุดที่เลือก
-function handleChatSelectionChange() {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) {
-        hideFloatButton();
-        return;
+// classList.remove() ที่ลบคลาสสุดท้ายออกยังเหลือ class="" ค้างไว้ (ไม่ใช่ byte-identical กับต้นฉบับ) — เก็บกวาดให้สะอาด
+function stripEmptyClassAttr(el) {
+    if (el.getAttribute("class") === "") el.removeAttribute("class");
+}
+
+// คืนสภาพ DOM เดิม — ย้าย node ของ wrapper กลับออกมาแล้วรวม text node ที่ถูกผ่า (normalize)
+// ทนต่อกรณีข้อความถูกวาดใหม่ไปแล้วระหว่างทาง (isConnected guard)
+function restoreParagraphUnits(units) {
+    for (const u of units) {
+        if (!u.el.isConnected) continue;
+        if (u.isWrapper) {
+            const span = u.el;
+            const parent = span.parentNode;
+            if (!parent) continue;
+            while (span.firstChild) parent.insertBefore(span.firstChild, span);
+            span.remove();
+            parent.normalize();
+            parent.classList.remove("scap-para-host");
+            stripEmptyClassAttr(parent);
+        } else {
+            u.el.classList.remove("scap-para", "scap-para-selected");
+            u.el.removeAttribute("role");
+            u.el.removeAttribute("tabindex");
+            u.el.removeAttribute("aria-pressed");
+            stripEmptyClassAttr(u.el);
+        }
     }
-    const text = selection.toString().trim();
-    if (!text) {
-        hideFloatButton();
-        return;
+}
+
+function extractUnitText(el) {
+    return el.textContent.trim();
+}
+
+function updateSelectBarState() {
+    if (!selectState) return;
+    const count = selectState.selected.size;
+    selectState.$bar.find(".scap-select-count").text(`เลือกแล้ว ${count} ย่อหน้า`);
+    selectState.$bar.find(".scap-select-confirm").toggleClass("scap-disabled", count === 0);
+}
+
+function toggleParagraphUnit(idx) {
+    if (!selectState) return;
+    const unit = selectState.units[idx];
+    if (!unit) return;
+    if (selectState.selected.has(idx)) {
+        selectState.selected.delete(idx);
+        unit.el.classList.remove("scap-para-selected");
+        unit.el.setAttribute("aria-pressed", "false");
+    } else {
+        selectState.selected.add(idx);
+        unit.el.classList.add("scap-para-selected");
+        unit.el.setAttribute("aria-pressed", "true");
     }
-    const anchorEl = selection.anchorNode?.nodeType === 1 ? selection.anchorNode : selection.anchorNode?.parentElement;
-    const $mesText = $(anchorEl).closest(".mes_text");
-    const $mes = $(anchorEl).closest(".mes");
-    if (!$mesText.length || !$mes.length || !$mes.closest("#chat").length) {
-        hideFloatButton();
+    updateSelectBarState();
+}
+
+// ออกจากโหมดเลือกย่อหน้า — เรียกได้จากทุกทาง เขียนให้ idempotent (เรียกซ้ำได้ไม่พัง)
+function exitParagraphSelect(reason) {
+    if (!selectState) return;
+    const { mesId, observer, units, $bar } = selectState;
+    observer.disconnect();
+    restoreParagraphUnits(units);
+    $bar.remove();
+    $(`#chat .mes[mesid="${mesId}"]`).removeClass("scap-selecting");
+    selectState = null;
+
+    // ตาข่ายนิรภัย — กันโหมดหลุดค้างจากเส้นทางที่คาดไม่ถึง
+    $("#chat .scap-select-bar").remove();
+    $("#chat .scap-selecting").removeClass("scap-selecting");
+    $("#chat .scap-para-host").removeClass("scap-para-host");
+
+    if (reason === "rerender") {
+        toastr.info("ข้อความถูกอัปเดต ยกเลิกการเลือกย่อหน้าแล้ว", "Scene Captured");
+    }
+}
+
+function confirmParagraphSelect() {
+    if (!selectState || !selectState.selected.size) return;
+    const { mesId, units, selected, $bar } = selectState;
+    const text = units
+        .filter((u, i) => selected.has(i))
+        .map((u) => extractUnitText(u.el))
+        .filter(Boolean)
+        .join("\n\n");
+    const brief = String($bar.find(".scap-select-brief").val() || "").trim();
+    exitParagraphSelect("confirm");
+    captureFlow(text, mesId, brief);
+}
+
+function enterParagraphSelect(mesId) {
+    if (selectState) exitParagraphSelect("switch");
+
+    const $mesEl = $(`#chat .mes[mesid="${mesId}"]`);
+    const mesTextEl = $mesEl.find(".mes_text")[0];
+    const message = getContext().chat[mesId];
+    if (!$mesEl.length || !mesTextEl || !message) return;
+
+    const units = collectParagraphUnits(mesTextEl);
+    if (!units.length) {
+        // ไม่มีย่อหน้าให้เลือก (ตาราง/โค้ด/การ์ดของ extension อื่นล้วน) — จับทั้งข้อความแบบเดิม
+        toastr.info("ข้อความนี้ไม่มีย่อหน้าให้เลือก — จับซีนทั้งข้อความแทน", "Scene Captured");
+        captureFlow(message.mes, mesId);
         return;
     }
 
-    const mesId = Number($mes.attr("mesid"));
-    pendingSelection = { text, mesId };
+    const $bar = buildParagraphSelectBar();
+    const $mesBlock = $mesEl.find(".mes_block");
+    $mesBlock.append($bar);
+    $mesEl.addClass("scap-selecting");
 
-    if (!$floatBtn) {
-        $floatBtn = buildFloatingCaptureButton();
-        $("body").append($floatBtn);
-    }
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
-    $floatBtn.css({
-        position: "fixed",
-        top: `${Math.max(8, rect.top - 36)}px`,
-        left: `${Math.max(8, rect.left)}px`,
-        zIndex: 9999,
-    });
+    const observer = new MutationObserver(() => exitParagraphSelect("rerender"));
+    observer.observe(mesTextEl, { childList: true });
+
+    selectState = { mesId, mesTextEl, $bar, units, selected: new Set(), observer };
+
+    // ย่อหน้าเดียว = ไม่มีอะไรให้เลือกจริง ๆ เลือกให้เลย ผู้ใช้มาเพื่อช่องบรีฟ
+    if (units.length === 1) toggleParagraphUnit(0);
+    else updateSelectBarState();
+
+    $bar[0].scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 // ===== เฟส 5: อัตโนมัติทุก n ข้อความ — ให้ AI เลือกซีนเอง =====
@@ -1006,6 +1135,7 @@ function resetAutoCounter() {
 
 // ให้ AI เลือกข้อความเองจาก N ข้อความล่าสุด แล้วจับซีน — ทำงานเงียบ ๆ เป็นงานเบื้องหลัง ไม่โชว์ toastr error รบกวนกลางแชท
 async function runAutoCapture() {
+    if (selectState) return; // ผู้ใช้กำลังเลือกย่อหน้าด้วยตัวเองอยู่ — อย่าไปแย่ง/รื้อ DOM ที่กำลังเลือก
     if (isCaptureBusy || busyControllers.size > 0) return; // มีงานจับซีน/เจนภาพอื่นทำอยู่ ข้ามรอบนี้ไปก่อน
 
     const ctx = getContext();
@@ -1145,14 +1275,67 @@ jQuery(async () => {
 
         $(document).on("click", ".scap-mes-capture", function () {
             const mesId = Number($(this).closest(".mes").attr("mesid"));
-            // ปุ่มกำลังสปิน (กำลังเจนภาพข้อความนี้อยู่) — กดซ้ำ = ยกเลิก แทนที่จะเริ่มจับซีนใหม่
+            // ปุ่มกำลังสปิน (กำลังเจนภาพข้อความนี้อยู่) — กดซ้ำ = ยกเลิก แทนที่จะเริ่มจับซีนใหม่ (ต้องเช็คก่อนเสมอ)
             if (busyControllers.has(mesId)) {
                 busyControllers.get(mesId).abort();
                 return;
             }
-            const message = getContext().chat[mesId];
-            if (!message) return;
-            captureFlow(message.mes, mesId);
+            // กดซ้ำข้อความเดิมที่กำลังเลือกย่อหน้าอยู่ = ออกจากโหมดเลือก
+            if (selectState?.mesId === mesId) {
+                exitParagraphSelect("toggle");
+                return;
+            }
+            if (isCaptureBusy) {
+                toastr.info("กำลังเขียน prompt อยู่ รอสักครู่", "Scene Captured");
+                return;
+            }
+            enterParagraphSelect(mesId);
+        });
+
+        // ===== เลือกย่อหน้า: แตะสลับเลือก/ยกเลิก + คีย์บอร์ด (Enter/Space) =====
+        $(document).on("click", ".mes.scap-selecting .scap-para", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = selectState?.units.findIndex((u) => u.el === this);
+            if (idx == null || idx < 0) return;
+            toggleParagraphUnit(idx);
+        });
+
+        $(document).on("keydown", ".mes.scap-selecting .scap-para", function (e) {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = selectState?.units.findIndex((u) => u.el === this);
+            if (idx == null || idx < 0) return;
+            toggleParagraphUnit(idx);
+        });
+
+        $(document).on("click", ".scap-select-all", function () {
+            if (!selectState) return;
+            selectState.units.forEach((u, i) => {
+                if (!selectState.selected.has(i)) toggleParagraphUnit(i);
+            });
+        });
+
+        $(document).on("click", ".scap-select-cancel", function () {
+            exitParagraphSelect("cancel");
+        });
+
+        $(document).on("click", ".scap-select-confirm", function () {
+            confirmParagraphSelect();
+        });
+
+        $(document).on("keydown", ".scap-select-brief", function (e) {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            confirmParagraphSelect();
+        });
+
+        $(document).on("keydown", function (e) {
+            if (e.key === "Escape" && selectState) {
+                e.stopPropagation();
+                exitParagraphSelect("escape");
+            }
         });
 
         // ===== เฟส 6: แก้ prompt / เจนใหม่ / ก๊อป prompt / ลบรูป =====
@@ -1235,26 +1418,10 @@ jQuery(async () => {
             toastr.success("ลบรูปแล้ว", "Scene Captured");
         });
 
-        $(document).on("click", "#scap-float-btn", function (e) {
-            e.stopPropagation();
-            if (!pendingSelection) return;
-            const { text, mesId } = pendingSelection;
-            window.getSelection()?.removeAllRanges();
-            hideFloatButton();
-            captureFlow(text, mesId);
-        });
-
-        // ใช้ selectionchange เป็นหลัก (ไม่ใช่ mouseup) — เพราะบนมือถือ ลากเลือกข้อความด้วยนิ้วไม่ยิง mouseup
-        // (เป็น native OS text-selection gesture ไม่ใช่ pointer event ปกติของหน้าเว็บ) แต่ selectionchange ยิงแน่นอนทุกวิธีเลือก
-        // (ลาก/แตะค้าง/double-tap/shift+arrow) ไม่ว่าจะเป็นเมาส์หรือนิ้ว — หน่วง debounce ไว้เพราะ event นี้ยิงถี่มากระหว่างลาก
-        document.addEventListener("selectionchange", () => {
-            clearTimeout(selectionChangeDebounceTimer);
-            selectionChangeDebounceTimer = setTimeout(handleChatSelectionChange, 150);
-        });
-
-        $(document).on("mousedown touchstart", (e) => {
-            if ($floatBtn && !$(e.target).closest("#scap-float-btn").length) hideFloatButton();
-        });
+        // โหมดเลือกย่อหน้าต้องปิดถ้าแชทถูกสลับ/ข้อความถูกลบ/โหลดข้อความเก่าเพิ่ม — กันสถานะค้างข้ามแชท
+        for (const ev of [ctx.eventTypes.CHAT_CHANGED, ctx.eventTypes.MESSAGE_DELETED, ctx.eventTypes.MORE_MESSAGES_LOADED]) {
+            ctx.eventSource.on(ev, () => exitParagraphSelect("chat-changed"));
+        }
 
         console.log(`[${extensionName}] ✅ Loaded successfully`);
     } catch (error) {

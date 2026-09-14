@@ -28,15 +28,79 @@
     flex: 1;
 }
 
-/* ===== เฟส 2: ปุ่มลอยเลือกข้อความ + หน้าต่างแก้ prompt ===== */
+/* ===== เฟส 2: เลือกย่อหน้าเพื่อจับซีน + หน้าต่างแก้ prompt ===== */
 
-.scap-float-btn {
+/* หน่วยที่แตะเลือกได้ (<p> เดิม หรือ <span> ที่ห่อรอบ <br>-run) */
+.scap-para {
+    cursor: pointer;
+    padding: 6px 8px;
+    margin: 0 -8px;
+    border-radius: 6px;
+    outline: 1px dashed color-mix(in srgb, var(--SmartThemeBorderColor) 80%, transparent);
+    transition: background-color 0.12s ease;
+}
+
+@media (hover: hover) {
+    .scap-para:hover {
+        background: color-mix(in srgb, var(--SmartThemeQuoteColor) 10%, transparent);
+    }
+}
+
+.scap-para-selected {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--SmartThemeQuoteColor);
+    outline: none;
+}
+
+/* กันเมนู copy/แว่นขยายของ iOS แย่งจังหวะแตะ เฉพาะข้อความที่กำลังเลือกอยู่เท่านั้น */
+.mes.scap-selecting .mes_text {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* จางส่วนที่แตะไม่ได้ (ตาราง/โค้ด/blockquote) ให้เห็นชัดว่าเลือกไม่ได้ — scap-para-host กัน <p> แม่ของ span ที่ห่อ <br> โดนจางไปด้วย */
+.mes.scap-selecting .mes_text > *:not(.scap-para):not(.scap-para-host) {
+    opacity: 0.45;
+}
+
+.scap-select-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.scap-select-bar-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    white-space: nowrap;
+    gap: 8px;
+}
+
+.scap-select-bar-status {
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+
+.scap-select-count {
+    flex: 1;
+}
+
+.scap-select-bar-actions {
+    justify-content: flex-end;
+}
+
+.scap-select-brief {
+    flex: 1;
+}
+
+.scap-disabled {
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 .scap-editor {
