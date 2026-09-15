@@ -18,6 +18,9 @@ import { getContext } from "../../../../extensions.js";
  * @property {string} base
  * @property {string} negative
  * @property {SceneCharacter[]} characters
+ * @property {string} imageName  ชื่อสั้น ๆ ที่ AI ตั้งให้ (ใช้เป็นคีย์ [img:ชื่อ] เมื่อส่งเข้าปลายทางอย่าง TinyGallery)
+ * @property {string} imageCaption  คำอธิบายภาพสั้น ๆ 1 บรรทัดที่ AI เขียนให้ (ให้ AI อ่านตอนเลือกรูปไปใช้)
+ * @property {string} imageSlug  ชื่ออังกฤษล้วน a-z0-9 คั่นขีดกลาง — ปลายทางที่ slugify ชื่อไทยไม่ได้ (เช่น tinysocial) ใช้ตัวนี้แทน
  */
 
 // ตัดส่วน reasoning/thinking ทิ้งก่อน parse (โมเดลบางตัวใส่ <think>...</think> มาด้วย)
@@ -57,7 +60,30 @@ export function buildSceneMessages(sceneText, systemPrompt, contextPreamble = ""
 }
 
 function emptyScenePrompt() {
-    return { base: "", negative: "", characters: [] };
+    return { base: "", negative: "", characters: [], imageName: "", imageCaption: "", imageSlug: "" };
+}
+
+// ชื่อสำรองเมื่อ AI ไม่ตอบ imageName มา (หรือตอบว่าง) — กันไม่ให้ตกไปเป็น undefined ตอนส่งเข้าปลายทางอย่าง TinyGallery
+export function fallbackImageName() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `ฉาก-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+// slug สำรองเมื่อ AI ไม่ตอบ imageSlug มา (หรือตอบว่าง/ตอบเป็นภาษาที่ sanitizeSlug กรองออกจนว่างเปล่า)
+export function fallbackImageSlug() {
+    return `scene-${Date.now().toString(36)}`;
+}
+
+// ทำความสะอาด slug ให้เป็น a-z0-9 คั่นด้วยขีดกลางเสมอ — ตรงกับกติกา slugify() ฝั่งปลายทาง (เช่น tinysocial)
+// กันกรณี AI ไม่ทำตามกติกาเป๊ะ (ใส่ตัวพิมพ์ใหญ่/เว้นวรรค/ภาษาไทยปนมา)
+function sanitizeSlug(raw) {
+    return String(raw || "")
+        .toLowerCase()
+        .normalize("NFKD").replace(new RegExp("[\\u0300-\\u036f]", "g"), "") // ตัด diacritics
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32);
 }
 
 function normalizeCharacter(raw, index) {
@@ -79,6 +105,9 @@ export function normalizeScenePrompt(obj) {
         base: String(obj.base ?? "").trim(),
         negative: String(obj.negative ?? "").trim(),
         characters,
+        imageName: String(obj.imageName ?? "").trim().slice(0, 40),
+        imageCaption: String(obj.imageCaption ?? "").trim(),
+        imageSlug: sanitizeSlug(obj.imageSlug ?? ""),
     };
 }
 
@@ -172,12 +201,18 @@ export function parseScenePrompt(raw) {
 
 // ประกอบ messages ให้ AI เลือกข้อความ (ระบุ mesId) จากรายการที่มีเลขกำกับ แล้วเขียน prompt ให้เลย
 // สำหรับ "เจนรูปด่วน" — ไม่มีข้อความฉากจากแชทมาให้ ผู้ใช้ระบุโจทย์เองหรืออ้างอิงตัวละคร/persona ตรง ๆ
-export function buildPortraitMessages(briefText, systemPrompt, contextPreamble = "") {
+// opts.soloHint (ค่าเริ่มต้น true) เน้นภาพเดี่ยว — เหมาะกับ "เจนรูปด่วน" ของผู้ใช้เอง (โจทย์มักเป็นภาพคนคนเดียว)
+// แต่คำขอจาก extension อื่น (เฟส E) อาจต้องการรูปวิว/อาหาร/หลายคน — ปิดได้ด้วย { soloHint: false }
+export function buildPortraitMessages(briefText, systemPrompt, contextPreamble = "", opts = {}) {
     const preamble = String(contextPreamble || "").trim();
+    const soloHint = opts.soloHint !== false;
+    const instruction = soloHint
+        ? `เขียน prompt ตามกติกาที่กำหนด (เน้นภาพเดี่ยว ไม่ต้องเดาใส่ฉาก/สถานการณ์เพิ่มเองถ้าโจทย์ไม่ได้ระบุ) ตอบเป็น JSON เท่านั้น`
+        : `เขียน prompt ตามกติกาที่กำหนด ไม่ต้องเดาใส่ฉาก/สถานการณ์เพิ่มเองถ้าโจทย์ไม่ได้ระบุ ตอบเป็น JSON เท่านั้น`;
     const user =
         (preamble ? `${preamble}\n\n` : "") +
         `นี่ไม่ใช่ฉากจากบทสนทนา แต่เป็นโจทย์ให้วาดภาพโดยตรง:\n"""\n${String(briefText || "").trim()}\n"""\n\n` +
-        `เขียน prompt ตามกติกาที่กำหนด (เน้นภาพเดี่ยว ไม่ต้องเดาใส่ฉาก/สถานการณ์เพิ่มเองถ้าโจทย์ไม่ได้ระบุ) ตอบเป็น JSON เท่านั้น`;
+        instruction;
     return [
         { role: "system", content: systemPrompt },
         { role: "user", content: user },

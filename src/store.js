@@ -31,10 +31,13 @@ export const DEFAULT_SYSTEM_PROMPT =
 - ⚠️ ถ้า "characters" มีมากกว่า 1 คน ห้ามใส่ "solo" ใน base เด็ดขาด (ขัดกับการแยกตัวละครของ NovelAI ทำให้เจนออกมาเหลือคนเดียว) และให้ระบุจำนวน/เพศคนในภาพให้ตรงจริง เช่น "2characters, 1girl, 1boy" แทน "1girl, solo"
 - "uc" ของแต่ละตัวละคร (ถ้ามี) คือสิ่งที่ไม่ต้องการให้ปรากฏเฉพาะตัวละครนั้น ปล่อยว่างได้ถ้าไม่มี
 - ⚠️ "negative" ของภาพรวม ใส่เฉพาะสิ่งที่ต้องเลี่ยง**เฉพาะฉากนี้**เท่านั้น (เช่น ไม่ต้องการให้มีฝนในภาพทั้งที่ฉากอาจสื่อถึงฝน) ห้ามใส่ negative ทั่วไปซ้ำ เช่น "lowres, bad anatomy, bad hands, worst quality, blurry, watermark" ฯลฯ — ค่าพวกนี้ระบบมีตั้งไว้ให้อยู่แล้วจากหน้าตั้งค่าเสมอ ไม่ต้องเขียนซ้ำ ปล่อยเป็น "" ได้ถ้าฉากนี้ไม่มีอะไรต้องเลี่ยงเป็นพิเศษ
+- "imageName" คือชื่อสั้น ๆ (ไม่เกิน 20 ตัวอักษร) ตั้งให้ภาพนี้ เอาไว้ใช้เป็นชื่ออ้างอิงภาพในคลังรูป เช่น "ริมทะเลยามเย็น" — ห้ามซ้ำกับชื่อทั่วไปเกินไป (เช่น "ภาพ1")
+- "imageCaption" คือคำบรรยายภาพสั้น ๆ 1 บรรทัด บอกว่าภาพนี้มีอะไร ให้คนอื่นเข้าใจได้โดยไม่ต้องเห็นภาพ
+- "imageSlug" คือชื่ออ้างอิงแบบอังกฤษล้วน สำหรับระบบที่ต้องใช้ชื่อไฟล์/คีย์ (ต่างจาก imageName ซึ่งเป็นชื่อที่คนอ่าน) ใช้ได้เฉพาะตัวพิมพ์เล็ก a-z, ตัวเลข 0-9 และขีดกลาง "-" เท่านั้น ไม่เกิน 32 ตัวอักษร เช่น "sunset-beach-walk" (ห้ามมีภาษาไทย ตัวพิมพ์ใหญ่ เว้นวรรค หรืออักขระอื่น)
 - ตอบกลับเป็น JSON เท่านั้น ห้ามมีข้อความอื่นนอกก้อน JSON ห้ามใช้ code fence
 
 รูปแบบ JSON ที่ต้องตอบ:
-{"base": "...", "negative": "", "characters": [{"name": "...", "prompt": "...", "uc": ""}]}
+{"base": "...", "negative": "", "characters": [{"name": "...", "prompt": "...", "uc": ""}], "imageName": "...", "imageCaption": "...", "imageSlug": "..."}
 
 ถ้าฉากมีตัวละครเดียวหรือไม่ต้องแยก ให้ "characters" เป็น array ว่าง [] แล้วใส่ลักษณะตัวละครลงใน "base" แทน`;
 
@@ -96,12 +99,22 @@ export const defaultSettings = {
     imageAttachMode: "gallery",  // gallery = extra.media (ปุ่ม swipe ในตัว ของ ST) | display-only = ฝังใน extra.display_text (ไม่ถูกส่งเข้า context เลย)
     autoSendToImageGen: false,   // true = ข้ามหน้าแก้ prompt แล้วเจนภาพทันที
 
+    // ท่อส่งรูปเข้า extension อื่น (เฟส B) — ค้นหาปลายทางผ่าน event "scap:discover-targets" ตอนเปิดหน้าต่างแก้ prompt
+    defaultDeliveryTarget: "",   // "" = (ไม่ส่ง) ค่าเริ่มต้นของ dropdown ในหน้าต่างแก้ prompt
+
     // อัตโนมัติทุก n ข้อความ
     autoEnabled: false,
     autoInterval: 10,
     autoMode: "manual",          // manual = แจ้งเตือน, full = เจนภาพให้เลย
     autoLookback: 6,
     autoMinChars: 40,
+
+    // เฟส E — รับคำขอเจนรูปจาก extension อื่น (เช่น AI เขียนโพสต์ใน TinyFeed/TinySocial แล้วขอรูปที่ยังไม่มี)
+    // ปิดไว้เป็นค่าเริ่มต้นเสมอ — ฟีเจอร์นี้เผาโควตาเจนภาพจริง ต้องให้ผู้ใช้เปิดเองเท่านั้น
+    acceptExternalRequests: false,
+    externalRequestMode: "ask",       // ask = ขึ้น toast ให้กดอนุมัติก่อน | auto = เจนให้อัตโนมัติเลย
+    externalRequestCooldownSec: 20,   // ระยะห่างขั้นต่ำระหว่างคำขอ (ต่อแชท)
+    externalRequestMaxPerChat: 10,    // เพดานจำนวนคำขอต่อแชท (0 = ไม่จำกัด) — รีเซ็ตเมื่อสลับแชท (เก็บใน chatMetadata)
 };
 
 // อ่านค่า settings แบบมี fallback ไปที่ defaultSettings — เพิ่มคีย์ใหม่ทีหลังไม่ต้อง migrate

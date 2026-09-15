@@ -12,7 +12,7 @@ import {
     setSetting,
     loadSettings,
 } from "./src/store.js";
-import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt, buildPortraitMessages, mergeNegative } from "./src/prompt.js";
+import { buildSceneMessages, parseScenePrompt, flattenScenePrompt, buildAutoSceneMessages, parseAutoScenePrompt, buildPortraitMessages, mergeNegative, fallbackImageName, fallbackImageSlug } from "./src/prompt.js";
 import { buildCharacterContext } from "./src/context.js";
 import { buildPromptEditor, readPromptEditor, buildParagraphSelectBar, buildQuickGenerateForm, readQuickGenerateForm } from "./src/ui.js";
 import { getBackend, testNaiDirectConnection, fetchCustomModels } from "./src/backends.js";
@@ -109,9 +109,29 @@ function populateSettingsForm() {
     $("#scap-auto-lookback").val(getSetting("autoLookback"));
     $("#scap-auto-min-chars").val(getSetting("autoMinChars"));
 
+    $("#scap-ext-accept").prop("checked", getSetting("acceptExternalRequests"));
+    $("#scap-ext-mode").val(getSetting("externalRequestMode"));
+    $("#scap-ext-cooldown").val(getSetting("externalRequestCooldownSec"));
+    $("#scap-ext-max-per-chat").val(getSetting("externalRequestMaxPerChat"));
+
     $("#scap-image-position").val(getSetting("imagePosition"));
     $("#scap-image-attach-mode").val(getSetting("imageAttachMode"));
     updateImageAttachModeHint();
+}
+
+// เติมตัวเลือกปลายทางในหน้าตั้งค่า — ค้นหาแยกจาก populateSettingsForm() เพราะเป็น async (ยิง event ไปหาปลายทางที่ติดตั้งอยู่)
+// รายชื่ออาจไม่ครบถ้า extension ปลายทางยังโหลดไม่เสร็จตอนนี้ (ลำดับโหลดไม่รับประกัน) — ไม่ใช่ปัญหาใหญ่เพราะหน้าต่างแก้ prompt ค้นหาใหม่ทุกครั้งที่เปิดอยู่แล้ว
+async function populateDeliveryTargetOptions() {
+    const ctx = getContext();
+    const targets = await discoverDeliveryTargets(ctx);
+    const current = getSetting("defaultDeliveryTarget") || "";
+    const $select = $("#scap-default-delivery-target");
+    let optsHtml = `<option value="">(ไม่ส่ง)</option>`;
+    for (const t of targets) {
+        optsHtml += `<option value="${$("<div>").text(t.id).html()}">${$("<div>").text(t.label || t.id).html()}</option>`;
+    }
+    $select.html(optsHtml);
+    $select.val(current);
 }
 
 const IMAGE_ATTACH_MODE_HINTS = {
@@ -436,6 +456,24 @@ function bindSettingsFormHandlers() {
         setSetting("autoMinChars", Number.isFinite(value) && value >= 0 ? value : defaultSettings.autoMinChars);
     });
 
+    $(document).on("input", "#scap-ext-accept", function () {
+        setSetting("acceptExternalRequests", Boolean($(this).prop("checked")));
+    });
+
+    $(document).on("change", "#scap-ext-mode", function () {
+        setSetting("externalRequestMode", $(this).val());
+    });
+
+    $(document).on("input", "#scap-ext-cooldown", function () {
+        const value = parseInt($(this).val(), 10);
+        setSetting("externalRequestCooldownSec", Number.isFinite(value) && value >= 0 ? value : defaultSettings.externalRequestCooldownSec);
+    });
+
+    $(document).on("input", "#scap-ext-max-per-chat", function () {
+        const value = parseInt($(this).val(), 10);
+        setSetting("externalRequestMaxPerChat", Number.isFinite(value) && value >= 0 ? value : defaultSettings.externalRequestMaxPerChat);
+    });
+
     $(document).on("change", "#scap-image-position", function () {
         setSetting("imagePosition", $(this).val());
         applyImagePositionToAllMessages();
@@ -444,6 +482,10 @@ function bindSettingsFormHandlers() {
     $(document).on("change", "#scap-image-attach-mode", function () {
         setSetting("imageAttachMode", $(this).val());
         updateImageAttachModeHint();
+    });
+
+    $(document).on("change", "#scap-default-delivery-target", function () {
+        setSetting("defaultDeliveryTarget", $(this).val());
     });
 }
 
@@ -639,6 +681,68 @@ async function attachMediaToMessage(ctx, message, mesId, url, promptTitle, negat
     }
 }
 
+// ===== เฟส B: ท่อส่งรูปเข้า extension อื่น (event bus ล้วน ๆ ไม่ import ปลายทางตรง ๆ) =====
+
+// ถามหาปลายทางที่ติดตั้งอยู่ตอนนี้ — เรียกตอนเปิดหน้าต่างแก้ prompt เท่านั้น (custom event ไม่ replay ให้คน
+// subscribe ทีหลัง และ extension ทุกตัวมี loading_order เท่ากันหมด จะพึ่งลำดับโหลดไม่ได้)
+async function discoverDeliveryTargets(ctx) {
+    const probe = { targets: [] };
+    try {
+        await ctx.eventSource.emit("scap:discover-targets", probe);
+    } catch (e) {
+        console.error(`[${extensionName}] scap:discover-targets ล้มเหลว:`, e);
+    }
+    return Array.isArray(probe.targets) ? probe.targets : [];
+}
+
+// ส่งรูปที่เจนเสร็จแล้วเข้าปลายทางที่เลือกไว้ — payload เป็น object ที่แก้ได้ ให้ฝั่งรับเขียนผลกลับมา
+// (จำเป็นเพราะ eventSource.emit() คืน undefined เสมอ และกลืน error ของ listener ทิ้ง ไม่มีทางรู้ผลด้วยวิธีอื่น)
+// คืน payload กลับให้ผู้เรียกเช็ค .accepted ได้เอง (เฟส E ใช้ตัดสินใจว่าจะลบไฟล์สำเนาฝั่งเราทิ้งไหม)
+async function deliverImageToTarget(ctx, targetId, data) {
+    const payload = { targetId, accepted: false, error: null, ...data };
+    try {
+        await ctx.eventSource.emit("scap:image-generated", payload);
+    } catch (e) {
+        console.error(`[${extensionName}] scap:image-generated ล้มเหลว:`, e);
+        toastr.error("ส่งรูปเข้าปลายทางไม่สำเร็จ (เกิดข้อผิดพลาดขณะส่ง)", "Scene Captured");
+        return payload;
+    }
+    if (payload.accepted) {
+        toastr.success(`ส่งรูป "${payload.name}" เข้าปลายทางแล้ว`, "Scene Captured");
+    } else if (payload.error) {
+        toastr.error(payload.error, "Scene Captured");
+    } else {
+        toastr.warning("ไม่พบปลายทางที่เลือกไว้ (อาจถูกปิดหรือถอดออกไปแล้ว)", "Scene Captured");
+    }
+    return payload;
+}
+
+// เจนภาพจริงแบบ headless — ไม่แตะ mesId/message เลยสักบรรทัด ใช้ร่วมกันทั้งเส้นทางในแชท
+// (generateImageForMessage ด้านล่าง) และเส้นทางคำขอจาก extension อื่น (เฟส E — handleGenerateImageRequest)
+// throw ถ้าล้มเหลว/ถูกยกเลิก ไม่จับ error เอง — ให้ผู้เรียกตัดสินใจว่าจะรายงานยังไง
+async function generateImageHeadless(scenePrompt, opts = {}) {
+    const ctx = getContext();
+    const backendId = getSetting("backend");
+    const backend = getBackend(backendId);
+    const params = buildGenerationParams();
+    if (opts.forceRandomSeed) params.seed = -1; // ปุ่ม "เจนใหม่" ต้องได้ seed สุ่มเสมอ ไม่ใช้ seed ตายตัวจากหน้าตั้งค่า
+
+    const result = await backend.generate(ctx, scenePrompt, params, opts.signal);
+    let url;
+    if (result?.data) {
+        const subFolder = ctx.name2 || extensionName;
+        const filename = `${subFolder}_${ctx.humanizedDateTime ? ctx.humanizedDateTime() : Date.now()}`;
+        url = await saveBase64AsFile(result.data, subFolder, filename, result.format || "png");
+    } else if (result?.url) {
+        url = result.url;
+    }
+    if (!url) throw new Error("backend ไม่ได้คืน URL หรือข้อมูลรูปกลับมา");
+
+    const promptTitle = flattenScenePrompt(scenePrompt, params.prefix);
+    const negative = mergeNegative(params.negativePrompt, scenePrompt.negative);
+    return { url, promptTitle, negative, width: params.width, height: params.height, backendId, params };
+}
+
 // เจนภาพจริงจาก ScenePrompt ที่มีอยู่แล้ว (ไม่เรียก LLM ซ้ำ) แล้วแทรกเข้าไปในข้อความ
 async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
     // ข้อความนี้กำลังอยู่ในโหมดเลือกย่อหน้าอยู่ — ปิดก่อน กันชนกับ observer ที่จะรื้อ DOM ระหว่างเจนภาพ
@@ -662,36 +766,40 @@ async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
         return;
     }
 
-    const backendId = getSetting("backend");
-    const backend = getBackend(backendId);
-    const params = buildGenerationParams();
-    if (opts.forceRandomSeed) params.seed = -1; // ปุ่ม "เจนใหม่" ต้องได้ seed สุ่มเสมอ ไม่ใช้ seed ตายตัวจากหน้าตั้งค่า
     const controller = new AbortController();
     busyControllers.set(mesId, controller);
     setMesButtonBusy(mesId, true);
 
     try {
-        const result = await backend.generate(ctx, scenePrompt, params, controller.signal);
-        let url;
-        if (result?.data) {
-            const subFolder = ctx.name2 || extensionName;
-            const filename = `${subFolder}_${ctx.humanizedDateTime ? ctx.humanizedDateTime() : Date.now()}`;
-            url = await saveBase64AsFile(result.data, subFolder, filename, result.format || "png");
-        } else if (result?.url) {
-            url = result.url;
-        }
-        if (!url) throw new Error("backend ไม่ได้คืน URL หรือข้อมูลรูปกลับมา");
+        const { url, promptTitle, negative, width, height, backendId, params } = await generateImageHeadless(scenePrompt, {
+            forceRandomSeed: opts.forceRandomSeed,
+            signal: controller.signal,
+        });
 
         if (!message.extra.scene_captured) message.extra.scene_captured = { prompt: scenePrompt, params: null, backend: null, at: Date.now(), imageUrl: null };
 
-        const promptTitle = flattenScenePrompt(scenePrompt, params.prefix);
-        await attachMediaToMessage(ctx, message, mesId, url, promptTitle, mergeNegative(params.negativePrompt, scenePrompt.negative), params.width, params.height);
+        await attachMediaToMessage(ctx, message, mesId, url, promptTitle, negative, width, height);
 
         message.extra.scene_captured.prompt = scenePrompt;
         message.extra.scene_captured.params = params;
         message.extra.scene_captured.backend = backendId;
         message.extra.scene_captured.at = Date.now();
         message.extra.scene_captured.imageUrl = url;
+
+        // ส่งเข้าปลายทางที่เลือกไว้ (ถ้ามี) — จุดเดียวนี้ครอบคลุมทั้งเส้นทางจับซีนและ "เจนรูปด่วน" เพราะลงมาที่ฟังก์ชันนี้หมด
+        const deliveryTarget = message.extra.scene_captured.target;
+        if (deliveryTarget) {
+            await deliverImageToTarget(ctx, deliveryTarget, {
+                url,
+                name: scenePrompt.imageName || fallbackImageName(),
+                slug: scenePrompt.imageSlug || fallbackImageSlug(),
+                caption: scenePrompt.imageCaption || "",
+                prompt: promptTitle,
+                negative,
+                width,
+                height,
+            });
+        }
 
         await ctx.saveChat();
         refreshMesButtonsFor(mesId);
@@ -709,11 +817,177 @@ async function generateImageForMessage(mesId, scenePromptOverride, opts = {}) {
     }
 }
 
+// ===== เฟส E: รับคำขอเจนรูปจาก extension อื่น (ทิศทางกลับกับเฟส B — ที่นั่นเราเป็นผู้ส่ง ที่นี่เราเป็นผู้รับคำขอ) =====
+// สัญญา 3 event: "scap:discover-generators" (ผู้ขอถามว่ามีใครเจนได้บ้าง) / "scap:generate-image" (ขอรูป —
+// fire-and-forget ห้าม await งานเจนจริง เพราะกิน 10-30 วิ) / "scap:generate-result" (เราแจ้งผลกลับตอนจบงาน)
+// รูปที่เจนเสร็จเดินทางกลับผ่านท่อเดิมของเฟส B (deliverImageToTarget → "scap:image-generated") — ปลายทาง
+// ทุกตัวคัดลอกไฟล์เป็นสำเนาของตัวเองอยู่แล้ว (ยืนยันจากเฟส C/D) จึงลบไฟล์ฝั่งเราทิ้งได้ทันทีหลัง accepted
+
+// ประกาศตัวเป็นผู้เจนได้ถ้าเปิดรับคำขอไว้ — เรียกจาก listener "scap:discover-generators"
+function handleDiscoverGenerators(probe) {
+    if (!getSetting("acceptExternalRequests")) return;
+    if (!probe || !Array.isArray(probe.generators)) return; // payload หน้าตาไม่ตรงสัญญา — เมินไปเงียบๆ
+    probe.generators.push({ id: "scene-captured", label: "Scene Captured" });
+}
+
+// ตัวกันงบ: cooldown เชิงเวลา + เพดานต่อแชท — เก็บสถานะร่วมกับตัวนับโหมดอัตโนมัติใน chatMetadata (รีเซ็ตเองตอนสลับแชทอยู่แล้ว)
+// เรียกตอน "รับคำขอ" (ไม่ใช่ตอนเจนเสร็จ) เพื่อกันคำขอถี่ ๆ ไม่ให้ผ่านเข้ามาพร้อมกันได้ทั้งที่ตัวแรกยังเจนไม่เสร็จ
+function checkExternalRequestGate() {
+    const state = getAutoState();
+    const now = Date.now();
+    const cooldownMs = Math.max(0, parseInt(getSetting("externalRequestCooldownSec"), 10) || 0) * 1000;
+    const lastAt = state.extReqLastAt || 0;
+    if (cooldownMs > 0 && now - lastAt < cooldownMs) {
+        const waitSec = Math.ceil((cooldownMs - (now - lastAt)) / 1000);
+        return { ok: false, error: `ขอรูปถี่เกินไป — รออีก ${waitSec} วินาทีแล้วลองใหม่` };
+    }
+    const maxPerChat = Math.max(0, parseInt(getSetting("externalRequestMaxPerChat"), 10) || 0);
+    const count = state.extReqCount || 0;
+    if (maxPerChat > 0 && count >= maxPerChat) {
+        return { ok: false, error: `ขอรูปในแชทนี้ครบโควตาแล้ว (${maxPerChat} ครั้ง) — เปลี่ยนได้ที่ตั้งค่า Scene Captured` };
+    }
+    state.extReqLastAt = now;
+    state.extReqCount = count + 1;
+    saveAutoState();
+    return { ok: true };
+}
+
+// งานจริง (headless ทั้งหมด ไม่มีข้อความในแชทเกี่ยวข้องเลย) — เรียกแบบ fire-and-forget จาก handleGenerateImageRequest
+async function processExternalGenerateRequest(req) {
+    const ctx = getContext();
+    const busyKey = `ext:${req.requesterId}:${req.requestId}`;
+    const controller = new AbortController();
+    busyControllers.set(busyKey, controller);
+
+    const finish = async (ok, error) => {
+        busyControllers.delete(busyKey);
+        try {
+            await ctx.eventSource.emit("scap:generate-result", {
+                requestId: req.requestId,
+                requesterId: req.requesterId,
+                ok,
+                error: error || null,
+                name: req.name,
+                slug: req.slug,
+            });
+        } catch (e) {
+            console.error(`[${extensionName}] scap:generate-result ล้มเหลว:`, e);
+        }
+    };
+
+    // โหมด "ask" — รองบผู้ใช้กดอนุมัติก่อน (toast ค้างไว้สูงสุด 3 นาที ไม่กด = ถือว่าไม่อนุมัติ)
+    if (getSetting("externalRequestMode") === "ask") {
+        const APPROVE_TIMEOUT_MS = 180000;
+        const approved = await new Promise((resolve) => {
+            let settled = false;
+            const toast = toastr.info(
+                `${req.requesterId} ขอรูป: "${req.description}" — คลิกที่นี่เพื่ออนุมัติให้เจน`,
+                "Scene Captured",
+                {
+                    timeOut: APPROVE_TIMEOUT_MS,
+                    extendedTimeOut: 0,
+                    onclick: () => { if (!settled) { settled = true; resolve(true); } },
+                },
+            );
+            setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                toastr.clear(toast);
+                resolve(false);
+            }, APPROVE_TIMEOUT_MS);
+        });
+        if (!approved) {
+            await finish(false, "ผู้ใช้ไม่ได้อนุมัติคำขอภายในเวลาที่กำหนด");
+            return;
+        }
+    }
+
+    try {
+        const contextPreamble = await buildCharacterContext(getCharacterContextOptions());
+        const messages = buildPortraitMessages(req.description, getSetting("systemPrompt"), contextPreamble, { soloHint: false });
+        const raw = await scapGenerate(messages, getSetting("responseLength"));
+        const scenePrompt = parseScenePrompt(raw);
+        if (!scenePrompt || (!scenePrompt.base && !scenePrompt.characters?.length)) {
+            throw new Error("เขียน prompt จากคำขอไม่สำเร็จ");
+        }
+
+        const { url, promptTitle, negative, width, height } = await generateImageHeadless(scenePrompt, { signal: controller.signal });
+
+        const payload = await deliverImageToTarget(ctx, req.requesterId, {
+            url,
+            name: req.name || scenePrompt.imageName || fallbackImageName(),
+            slug: req.slug || scenePrompt.imageSlug || fallbackImageSlug(),
+            caption: String(req.description || "").slice(0, 200),
+            prompt: promptTitle,
+            negative,
+            width,
+            height,
+        });
+
+        if (!payload.accepted) {
+            throw new Error(payload.error || "ปลายทางไม่รับรูป (อาจถูกปิดหรือถอดออกไปแล้ว)");
+        }
+        // ปลายทางคัดลอกไฟล์เป็นสำเนาของตัวเองไปแล้ว — ไม่มีข้อความในแชทฝั่งเราอ้างอิงไฟล์นี้เลย
+        // ถ้าไม่ลบจะกลายเป็นไฟล์กำพร้าถาวร (ปุ่ม "ลบรูป" ทำงานผ่าน message.extra ทั้งหมด เข้าไม่ถึงไฟล์นี้)
+        await deleteImageFileIfLocal(url);
+
+        await finish(true, null);
+    } catch (e) {
+        if (e?.name === "AbortError") {
+            console.log(`[${extensionName}] คำขอเจนรูปจาก ${req.requesterId} ถูกยกเลิก`);
+            await finish(false, "ถูกยกเลิกระหว่างเจน");
+        } else {
+            console.error(`[${extensionName}] processExternalGenerateRequest ล้มเหลว:`, e?.cause ?? e);
+            await finish(false, String(e?.cause?.message || e?.message || e));
+        }
+    } finally {
+        busyControllers.delete(busyKey);
+    }
+}
+
+// รับคำขอเจนรูป — เรียกจาก listener "scap:generate-image" ต้อง sync ล้วน ๆ (แค่ตรวจ+เขียน req.accepted/error แล้ว
+// return) ห้าม await งานเจนจริงเด็ดขาด ไม่งั้น eventSource.emit() ของผู้ขอจะค้างรอ 10-30 วินาที
+function handleGenerateImageRequest(req) {
+    if (!req || typeof req !== "object") return;
+    if (!getSetting("acceptExternalRequests")) {
+        req.error = "Scene Captured ปิดรับคำขอเจนรูปจากภายนอกอยู่ (เปิดได้ที่ตั้งค่า Scene Captured)";
+        return;
+    }
+    if (!req.requesterId || !String(req.description || "").trim()) {
+        req.error = "คำขอไม่ครบ (ต้องมี requesterId และ description)";
+        return;
+    }
+    if (isCaptureBusy || busyControllers.size > 0) {
+        req.error = "Scene Captured กำลังทำงานอื่นอยู่ ลองใหม่อีกครั้ง";
+        return;
+    }
+    const gate = checkExternalRequestGate();
+    if (!gate.ok) {
+        req.error = gate.error;
+        return;
+    }
+
+    req.accepted = true;
+    // fire-and-forget โดยตั้งใจ — ดูคอมเมนต์บนฟังก์ชัน
+    processExternalGenerateRequest({ ...req }).catch((e) => {
+        console.error(`[${extensionName}] processExternalGenerateRequest ล้มเหลว (unhandled):`, e);
+    });
+}
+
 // เปิดหน้าต่างแก้ prompt — "สร้างภาพ" บันทึกแล้วเจนต่อทันที, "บันทึก prompt อย่างเดียว" เก็บไว้เจนทีหลัง
 const POPUP_RESULT_SAVE_ONLY = 1002;
 async function openSceneEditor(scenePrompt, mesId) {
     const ctx = getContext();
-    const $container = buildPromptEditor(scenePrompt, getSetting("prefix"), getSetting("negativePrompt"));
+    const message = ctx.chat[mesId];
+    if (!message) {
+        console.error(`[${extensionName}] ไม่พบข้อความ mesId=${mesId} ตอนจะเปิดหน้าต่างแก้ prompt`);
+        toastr.error("ไม่พบข้อความนี้แล้ว (อาจถูกลบหรือแชทถูกสลับ)", "Scene Captured");
+        return;
+    }
+
+    const targets = await discoverDeliveryTargets(ctx);
+    const currentTarget = message.extra?.scene_captured?.target || getSetting("defaultDeliveryTarget") || "";
+    const $container = buildPromptEditor(scenePrompt, getSetting("prefix"), getSetting("negativePrompt"), targets, currentTarget);
 
     const result = await ctx.callGenericPopup($container, ctx.POPUP_TYPE.TEXT, "", {
         wide: true,
@@ -730,16 +1004,13 @@ async function openSceneEditor(scenePrompt, mesId) {
     }
 
     const edited = readPromptEditor($container);
-    const message = ctx.chat[mesId];
-    if (!message) {
-        console.error(`[${extensionName}] ไม่พบข้อความ mesId=${mesId} ตอนจะบันทึก prompt`);
-        toastr.error("ไม่พบข้อความนี้แล้ว (อาจถูกลบหรือแชทถูกสลับ)", "Scene Captured");
-        return;
-    }
+    const target = edited.target || "";
+    delete edited.target;
 
     if (!message.extra || typeof message.extra !== "object") message.extra = {};
     message.extra.scene_captured = {
         prompt: edited,
+        target,
         params: null,
         backend: null,
         at: Date.now(),
@@ -1225,12 +1496,18 @@ jQuery(async () => {
     try {
         loadSettings();
 
+        // ===== เฟส E: รับคำขอเจนรูปจาก extension อื่น — ผูกให้เร็วที่สุดก่อน await ตัวแรก เพราะทุก extension
+        // มี loading_order เท่ากันหมด (100) ลำดับโหลดพึ่งไม่ได้ ผู้ขออาจยิง event มาได้ทุกเมื่อ =====
+        getContext().eventSource.on("scap:discover-generators", handleDiscoverGenerators);
+        getContext().eventSource.on("scap:generate-image", handleGenerateImageRequest);
+
         const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
         $("#extensions_settings2").append(settingsHtml);
 
         bindSettingsFormHandlers();
         populateSettingsForm();
         populateApiProfileDropdown();
+        populateDeliveryTargetOptions();
 
         // ===== เฟส 2: ปุ่มจับซีน (ทั้งข้อความ + selection) =====
         const ctx = getContext();

@@ -291,6 +291,12 @@
                     <option value="display-only">แบบไม่ส่งเข้า context เลย</option>
                 </select>
                 <small class="scap-field-hint" id="scap-image-attach-mode-hint"></small>
+
+                <label for="scap-default-delivery-target">ส่งรูปเข้า (ค่าเริ่มต้น)</label>
+                <select id="scap-default-delivery-target" class="text_pole">
+                    <option value="">(ไม่ส่ง)</option>
+                </select>
+                <small class="scap-field-hint">ค่าเริ่มต้นของช่อง "ส่งรูปเข้า" ในหน้าต่างแก้ prompt ทุกครั้ง — เปลี่ยนได้อีกทีตอนเจนแต่ละภาพ รายชื่อขึ้นกับ extension ที่รองรับซึ่งติดตั้งอยู่</small>
             </div>
 
             <!-- ===== กลุ่ม 4: อัตโนมัติ ===== -->
@@ -321,6 +327,34 @@
 
                     <label for="scap-auto-min-chars">ข้อความสั้นกว่านี้ (ตัวอักษร) ไม่นับเป็นตัวเลือก</label>
                     <input id="scap-auto-min-chars" type="number" class="text_pole" min="0" step="10" />
+                </div>
+            </div>
+
+            <!-- ===== กลุ่ม 5: รับคำขอเจนรูปจาก extension อื่น ===== -->
+            <div class="scap-settings-group">
+                <div class="scap-settings-title"><i class="fa-solid fa-inbox"></i> รับคำขอเจนรูปจาก extension อื่น</div>
+                <small class="scap-field-hint">ให้ AI ที่เขียนโพสต์ใน extension อื่น (เช่น TinyFeed, TinySocial) ขอรูปที่ยังไม่มีในคลังได้ — ปิดไว้เป็นค่าเริ่มต้นเพราะเจนภาพเปลืองโควตาจริง</small>
+
+                <label class="checkbox_label" for="scap-ext-accept">
+                    <input id="scap-ext-accept" type="checkbox" />
+                    <span>เปิดรับคำขอเจนรูปจากภายนอก</span>
+                </label>
+
+                <label for="scap-ext-mode">เมื่อมีคำขอเข้ามา</label>
+                <select id="scap-ext-mode" class="text_pole">
+                    <option value="ask">ถามก่อนทุกครั้ง (แนะนำ)</option>
+                    <option value="auto">เจนให้อัตโนมัติเลย</option>
+                </select>
+
+                <div class="scap-advanced-toggle" data-target="scap-adv-ext">
+                    <i class="fa-solid fa-chevron-right"></i> ตั้งค่าขั้นสูง
+                </div>
+                <div id="scap-adv-ext" class="scap-advanced scap-hidden">
+                    <label for="scap-ext-cooldown">ระยะห่างขั้นต่ำระหว่างคำขอ (วินาที)</label>
+                    <input id="scap-ext-cooldown" type="number" class="text_pole" min="0" step="5" />
+
+                    <label for="scap-ext-max-per-chat">เพดานจำนวนคำขอต่อแชท (0 = ไม่จำกัด)</label>
+                    <input id="scap-ext-max-per-chat" type="number" class="text_pole" min="0" step="1" />
                 </div>
             </div>
         </div>

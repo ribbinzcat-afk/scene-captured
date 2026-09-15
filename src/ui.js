@@ -49,9 +49,19 @@ function buildCharacterRowHtml(ch, uid) {
     </div>`;
 }
 
+// dropdown "ส่งรูปเข้า" — ตัวเลือกแรกเป็น (ไม่ส่ง) เสมอ แล้วเติมจากปลายทางที่ discover เจอตอนเปิดหน้าต่างนี้
+function buildDeliveryOptionsHtml(targets, currentTarget) {
+    let opts = `<option value=""${currentTarget ? "" : " selected"}>(ไม่ส่ง)</option>`;
+    for (const t of targets || []) {
+        const selected = t.id === currentTarget ? " selected" : "";
+        opts += `<option value="${escapeHtml(t.id)}"${selected}>${escapeHtml(t.label || t.id)}</option>`;
+    }
+    return opts;
+}
+
 // สร้างหน้าต่างแก้ prompt เป็น jQuery element ที่ยังคงอ้างอิงได้หลัง popup ปิด
 // (ต้องส่ง element/jQuery object ให้ callGenericPopup ไม่ใช่ string ถึงจะอ่านค่ากลับได้)
-export function buildPromptEditor(scenePrompt, prefixText, settingsNegativeText) {
+export function buildPromptEditor(scenePrompt, prefixText, settingsNegativeText, targets = [], currentTarget = "") {
     const $container = $(`
     <div class="scap-editor">
         <div class="scap-editor-prefix">
@@ -70,6 +80,9 @@ export function buildPromptEditor(scenePrompt, prefixText, settingsNegativeText)
         <label>Negative เพิ่มเติมเฉพาะภาพนี้ (ไม่บังคับ)</label>
         <textarea class="scap-editor-negative text_pole" rows="2"></textarea>
 
+        <label for="scap-editor-target">ส่งรูปเข้า</label>
+        <select id="scap-editor-target" class="scap-editor-target text_pole">${buildDeliveryOptionsHtml(targets, currentTarget)}</select>
+
         <div class="scap-editor-chars-head">
             <b>ตัวละครแยก (สำหรับ backend ที่รองรับ)</b>
             <div class="scap-editor-add-char menu_button menu_button_icon interactable">
@@ -81,6 +94,9 @@ export function buildPromptEditor(scenePrompt, prefixText, settingsNegativeText)
 
     $container.find(".scap-editor-base").val(scenePrompt.base || "");
     $container.find(".scap-editor-negative").val(scenePrompt.negative || "");
+    // imageName/imageCaption ไม่มีช่องแก้ในหน้าต่างนี้ (เขียนโดย AI ล้วน ๆ) — เก็บผ่าน container ไว้ให้ readPromptEditor คืนค่าเดิมกลับไป
+    $container.data("scap-image-name", scenePrompt.imageName || "");
+    $container.data("scap-image-caption", scenePrompt.imageCaption || "");
 
     const $charsWrap = $container.find(".scap-editor-characters");
     for (const ch of scenePrompt.characters || []) {
@@ -140,7 +156,18 @@ export function readPromptEditor($container) {
         base: $container.find(".scap-editor-base").val().trim(),
         negative: $container.find(".scap-editor-negative").val().trim(),
         characters,
+        imageName: String(scenePromptImageName($container) || "").trim(),
+        imageCaption: String(scenePromptImageCaption($container) || "").trim(),
+        target: $container.find(".scap-editor-target").val() || "",
     };
+}
+
+// imageName/imageCaption ไม่มีช่องแก้ในหน้าต่างนี้ (มาจาก AI ล้วน ๆ) — อ่านจาก dataset ที่ผูกไว้ตอนสร้าง container แทน
+function scenePromptImageName($container) {
+    return $container.data("scap-image-name") || "";
+}
+function scenePromptImageCaption($container) {
+    return $container.data("scap-image-caption") || "";
 }
 
 // แถบเลือกย่อหน้า — ต่อท้าย .mes_block ตอนกดกล้องเข้าโหมดเลือก (ไม่ใช่ popup — อยู่ในแชทเลย)
